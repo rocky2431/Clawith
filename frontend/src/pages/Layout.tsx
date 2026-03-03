@@ -150,7 +150,7 @@ export default function Layout() {
     return (
         <div className="app-layout">
             <nav className="sidebar">
-                <div className="sidebar-logo">Clawith</div>
+                <div className="sidebar-logo"><img src="/logo.png" alt="" style={{ width: 22, height: 22 }} />Clawith</div>
 
                 {/* Company Switcher */}
                 {user?.role === 'platform_admin' && (
