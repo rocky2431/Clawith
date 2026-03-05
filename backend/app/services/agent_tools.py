@@ -201,14 +201,14 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "web_search",
-            "description": "Search the internet via DuckDuckGo for real-time information. Note: may be slow or unavailable on some networks. Use bing_search as an alternative.",
+            "name": "jina_search",
+            "description": "Search the internet using Jina AI Search (s.jina.ai). Returns high-quality search results with full page content, not just snippets. Ideal for research, news, technical docs, and any real-time information lookup.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search keywords, e.g. 'Python asyncio tutorial' or 'AI industry trends 2026'",
+                        "description": "Search query, e.g. 'Python asyncio best practices' or '苏州通道人工智能科技有限公司'",
                     },
                     "max_results": {
                         "type": "integer",
@@ -222,29 +222,8 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "bing_search",
-            "description": "Search the internet via Bing for real-time information. Works reliably in China and worldwide. Useful for news, technical docs, product info, and latest data.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search keywords, e.g. 'Python asyncio tutorial' or '北京天气'",
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Number of results to return, default 5, max 10",
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_webpage",
-            "description": "Read and extract the main text content from a web page URL. Useful for reading articles, documentation, news pages, or any public web content. Returns clean readable text/markdown.",
+            "name": "jina_read",
+            "description": "Read and extract the full content from a web page URL using Jina AI Reader (r.jina.ai). Returns clean, well-structured markdown including article text, tables, and key information. Better than jina_search when you already have a specific URL to read.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -254,7 +233,7 @@ AGENT_TOOLS = [
                     },
                     "max_chars": {
                         "type": "integer",
-                        "description": "Max characters to return (default 4000, max 10000)",
+                        "description": "Max characters to return (default 8000, max 20000)",
                     },
                 },
                 "required": ["url"],
@@ -535,7 +514,8 @@ async def execute_tool(
             path = arguments.get("path")
             if not path:
                 return "❌ Missing required argument 'path' for read_document"
-            result = await _read_document(ws, path)
+            max_chars = min(int(arguments.get("max_chars", 8000)), 20000)
+            result = await _read_document(ws, path, max_chars=max_chars)
         elif tool_name == "write_file":
             path = arguments.get("path")
             content = arguments.get("content")
@@ -554,10 +534,14 @@ async def execute_tool(
             result = await _send_message_to_agent(agent_id, arguments)
         elif tool_name == "web_search":
             result = await _web_search(arguments)
+        elif tool_name == "jina_search":
+            result = await _jina_search(arguments)
         elif tool_name == "bing_search":
-            result = await _bing_search(arguments)
+            result = await _jina_search(arguments)  # redirect legacy to jina
+        elif tool_name == "jina_read":
+            result = await _jina_read(arguments)
         elif tool_name == "read_webpage":
-            result = await _read_webpage(arguments)
+            result = await _jina_read(arguments)  # redirect legacy to jina
         elif tool_name == "plaza_get_new_posts":
             result = await _plaza_get_new_posts(arguments)
         elif tool_name == "plaza_create_post":
@@ -659,64 +643,75 @@ async def _search_duckduckgo(query: str, max_results: int) -> str:
         return f'🔍 No results found for "{query}"'
     return f'🔍 DuckDuckGo results for "{query}" ({len(results)} items):\n\n' + "\n\n---\n\n".join(results)
 
+async def _get_jina_api_key() -> str:
+    """Read Jina API key from DB system_settings first, then fall back to env."""
+    try:
+        from app.database import async_session
+        from app.models.system_settings import SystemSetting
+        from sqlalchemy import select
+        async with async_session() as db:
+            result = await db.execute(select(SystemSetting).where(SystemSetting.key == "jina_api_key"))
+            setting = result.scalar_one_or_none()
+            if setting and setting.value.get("api_key"):
+                return setting.value["api_key"]
+    except Exception:
+        pass
+    from app.config import get_settings
+    return get_settings().JINA_API_KEY
 
-async def _bing_search(arguments: dict) -> str:
-    """Search via Bing HTML (free, no API key, works in China)."""
-    import httpx, re
-    from html import unescape
 
-    query = arguments.get("query", "")
+async def _jina_search(arguments: dict) -> str:
+    """Search via Jina AI Search API (s.jina.ai). Returns full content per result, not just snippets."""
+    import httpx
+
+    query = arguments.get("query", "").strip()
     if not query:
         return "❌ Please provide search keywords"
 
     max_results = min(arguments.get("max_results", 5), 10)
+    api_key = await _get_jina_api_key()
+
+    headers: dict = {
+        "Accept": "application/json",
+        "X-Respond-With": "no-content",  # return snippets/descriptions, not full pages (faster)
+        "X-Return-Format": "markdown",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
             resp = await client.get(
-                "https://www.bing.com/search",
-                params={"q": query, "count": max_results * 2, "setlang": "zh-CN"},
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                },
-                timeout=15,
+                f"https://s.jina.ai/{__import__('urllib.parse', fromlist=['quote']).quote(query)}",
+                headers=headers,
             )
 
-        # Extract results from Bing HTML
-        results = []
-        # Main result blocks: <li class="b_algo">
-        blocks = re.findall(r'<li class="b_algo".*?</li>', resp.text, re.DOTALL)
-        for block in blocks[:max_results]:
-            # Title & URL
-            title_m = re.search(r'<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, re.DOTALL)
-            # Snippet
-            snippet_m = re.search(r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>', block, re.DOTALL)
-            if not snippet_m:
-                snippet_m = re.search(r'<p>(.*?)</p>', block, re.DOTALL)
-            if title_m:
-                url = title_m.group(1)
-                title = re.sub(r'<[^>]+>', '', title_m.group(2)).strip()
-                title = unescape(title)
-                snippet = ""
-                if snippet_m:
-                    snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip()
-                    snippet = unescape(snippet)
-                results.append(f"**{title}**\n{url}\n{snippet}")
+        if resp.status_code != 200:
+            return f"❌ Jina Search error HTTP {resp.status_code}: {resp.text[:200]}"
 
-        if not results:
-            return f'🔍 No Bing results found for "{query}"'
-        return f'🔍 Bing results for "{query}" ({len(results)} items):\n\n' + "\n\n---\n\n".join(results)
+        data = resp.json()
+        items = data.get("data", [])[:max_results]
+
+        if not items:
+            return f'🔍 No results found for "{query}"'
+
+        parts = []
+        for i, item in enumerate(items, 1):
+            title = item.get("title", "Untitled")
+            url = item.get("url", "")
+            description = item.get("description", "") or item.get("content", "")[:500]
+            parts.append(f"**{i}. {title}**\n{url}\n{description}")
+
+        return f'🔍 Jina Search results for "{query}" ({len(items)} items):\n\n' + "\n\n---\n\n".join(parts)
+
     except Exception as e:
-        return f"❌ Bing search error: {str(e)[:200]}"
+        return f"❌ Jina Search error: {str(e)[:300]}"
 
 
-async def _read_webpage(arguments: dict) -> str:
-    """Read web page content. Priority: Jina Reader → trafilatura → raw body strip."""
+async def _jina_read(arguments: dict) -> str:
+    """Read web page via Jina AI Reader API (r.jina.ai). Returns clean structured markdown."""
     import httpx
-    import re
-    from html import unescape
-    from urllib.parse import urlparse
+    from app.config import get_settings
 
     url = arguments.get("url", "").strip()
     if not url:
@@ -724,99 +719,38 @@ async def _read_webpage(arguments: dict) -> str:
     if not url.startswith("http"):
         url = "https://" + url
 
-    max_chars = min(arguments.get("max_chars", 4000), 10000)
+    max_chars = min(arguments.get("max_chars", 8000), 20000)
+    api_key = await _get_jina_api_key()
 
-    parsed = urlparse(url)
-    origin = f"{parsed.scheme}://{parsed.netloc}"
-    browser_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "identity",
-        "Referer": origin + "/",
-        "Upgrade-Insecure-Requests": "1",
+    headers: dict = {
+        "Accept": "text/plain, text/markdown, */*",
+        "X-Return-Format": "markdown",
+        "X-Remove-Selector": "header, footer, nav, aside, .ads, .advertisement",
     }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
-    def _truncate(text: str) -> str:
-        text = text.strip()
-        if len(text) > max_chars:
-            text = text[:max_chars] + f"\n\n[... truncated at {max_chars} chars]"
-        return text
-
-    # ── Method 1: Jina Reader (best for international & JS-rendered pages) ──
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
             resp = await client.get(
                 f"https://r.jina.ai/{url}",
-                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain, text/markdown, */*"},
+                headers=headers,
             )
-        if resp.status_code == 200:
-            text = resp.text.strip()
-            # Jina sometimes returns short error messages — validate content
-            if len(text) > 200 and not text.startswith("Error") and "Unable to" not in text[:100]:
-                return f"📄 **Content from: {url}**\n\n{_truncate(text)}"
-    except Exception:
-        pass
 
-    # ── Method 2: Fetch HTML + trafilatura (best for Chinese/gov sites) ──
-    raw_bytes = None
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20, verify=False) as client:
-            resp = await client.get(url, headers=browser_headers)
+        if resp.status_code != 200:
+            return f"❌ Jina Reader error HTTP {resp.status_code}: {resp.text[:200]}"
 
-        if resp.status_code >= 400:
-            return f"❌ Server returned HTTP {resp.status_code} for {url}"
+        text = resp.text.strip()
+        if not text or len(text) < 100:
+            return f"❌ Jina Reader returned empty content for {url}"
 
-        raw_bytes = resp.content
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n\n[... truncated at {max_chars} chars]"
 
-        try:
-            import trafilatura
-            # trafilatura auto-handles encoding (GBK, GB2312, UTF-8, etc.)
-            text = trafilatura.extract(
-                raw_bytes,
-                url=url,
-                include_comments=False,
-                include_tables=True,
-                no_fallback=False,
-                favor_recall=True,
-            )
-            if text and len(text.strip()) > 50:
-                return f"📄 **Content from: {url}**\n\n{_truncate(text)}"
-        except ImportError:
-            pass  # trafilatura not installed, fall through
-        except Exception:
-            pass  # parsing error, fall through
+        return f"📄 **Content from: {url}**\n\n{text}"
 
     except Exception as e:
-        if raw_bytes is None:
-            return f"❌ Failed to fetch {url}: {str(e)[:200]}"
-
-    # ── Method 3: Raw body strip (last resort) ──
-    if raw_bytes:
-        try:
-            # Detect encoding from meta tag
-            head_ascii = raw_bytes[:3000].decode('ascii', errors='ignore')
-            meta_m = re.search(r'charset=["\']?([^"\'\s;>]+)', head_ascii, re.IGNORECASE)
-            charset = meta_m.group(1).lower() if meta_m else 'utf-8'
-            if charset in ('gb2312', 'gbk', 'gb18030', 'x-gbk'):
-                html = raw_bytes.decode('gbk', errors='replace')
-            else:
-                html = raw_bytes.decode(charset, errors='replace')
-
-            html = re.sub(r'<(script|style|nav|footer|aside)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
-            body_m = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
-            html = body_m.group(1) if body_m else html
-            text = re.sub(r'<[^>]+>', ' ', html)
-            text = unescape(text)
-            text = re.sub(r'[ \t]{2,}', ' ', text)
-            text = re.sub(r'\n{3,}', '\n\n', text).strip()
-
-            if text and len(text) > 20:
-                return f"📄 **Content from: {url}**\n\n{_truncate(text)}"
-        except Exception:
-            pass
-
-    return f"❌ Could not extract meaningful content from {url}"
+        return f"❌ Jina Reader error: {str(e)[:300]}"
 
 
 
@@ -990,7 +924,7 @@ def _read_file(ws: Path, rel_path: str) -> str:
         return f"Read failed: {e}"
 
 
-async def _read_document(ws: Path, rel_path: str) -> str:
+async def _read_document(ws: Path, rel_path: str, max_chars: int = 8000) -> str:
     """Read content from office documents (PDF, DOCX, XLSX, PPTX)."""
     # Handle enterprise_info/ as shared directory
     if rel_path and rel_path.startswith("enterprise_info"):
@@ -1059,8 +993,8 @@ async def _read_document(ws: Path, rel_path: str) -> str:
         else:
             return f"Unsupported file format: {ext}. Supported: PDF, DOCX, XLSX, PPTX, TXT, MD, CSV"
 
-        if len(content) > 8000:
-            content = content[:8000] + f"\n\n...[truncated, {len(content)} chars total]"
+        if len(content) > max_chars:
+            content = content[:max_chars] + f"\n\n...[truncated, {len(content)} chars total]"
         return content
 
     except ImportError as e:
