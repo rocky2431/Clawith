@@ -626,6 +626,11 @@ function AgentDetailInner() {
     const [expandedFocus, setExpandedFocus] = useState<string | null>(null);
     const [expandedReflection, setExpandedReflection] = useState<string | null>(null);
     const [reflectionMessages, setReflectionMessages] = useState<Record<string, any[]>>({});
+    const [showAllFocus, setShowAllFocus] = useState(false);
+    const [showCompletedFocus, setShowCompletedFocus] = useState(false);
+    const [showAllTriggers, setShowAllTriggers] = useState(false);
+    const [showAllReflections, setShowAllReflections] = useState(false);
+    const SECTION_PAGE_SIZE = 5;
 
     const { data: soulContent } = useQuery({
         queryKey: ['file', id, 'soul.md'],
@@ -1747,186 +1752,258 @@ function AgentDetailInner() {
                     const hasFocusItems = focusItems.length > 0;
                     const hasStandalone = standaloneTriggers.length > 0;
 
-                    return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            {/* Header */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                <div>
-                                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('agent.aware.focus')}</h4>
-                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.aware.focusDesc')}</span>
-                                </div>
-                            </div>
+                    // Split focus items: active first, completed separately
+                    const activeFocusItems = focusItems.filter(f => !f.done);
+                    const completedFocusItems = focusItems.filter(f => f.done);
+                    const visibleActiveFocus = showAllFocus ? activeFocusItems : activeFocusItems.slice(0, SECTION_PAGE_SIZE);
+                    const hiddenActiveCount = activeFocusItems.length - visibleActiveFocus.length;
 
-                            {/* Focus Items */}
-                            {hasFocusItems && focusItems.map((item) => {
-                                const isExpanded = expandedFocus === item.id;
-                                const itemTriggers = triggersByFocus[item.name] || [];
-                                const itemLogs = triggerLogsByFocus[item.name] || [];
-                                const displayTitle = item.description || item.name;
-                                const displaySubtitle = item.description ? item.name : null;
+                    // Render a focus item row
+                    const renderFocusItem = (item: typeof focusItems[0]) => {
+                        const isExpanded = expandedFocus === item.id;
+                        const itemTriggers = triggersByFocus[item.name] || [];
+                        const itemLogs = triggerLogsByFocus[item.name] || [];
+                        const displayTitle = item.description || item.name;
+                        const displaySubtitle = item.description ? item.name : null;
 
-                                return (
-                                    <div key={item.id} style={{
-                                        borderRadius: '8px',
-                                        border: '1px solid var(--border-subtle)',
-                                        overflow: 'hidden',
-                                        marginBottom: '6px',
-                                        background: 'var(--bg-primary)',
-                                    }}>
-                                        {/* Focus Item Header */}
-                                        <div
-                                            onClick={() => setExpandedFocus(isExpanded ? null : item.id)}
-                                            style={{
-                                                padding: '12px 16px',
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: '12px',
-                                                cursor: 'pointer',
-                                                transition: 'background 0.15s',
-                                            }}
-                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                        >
-                                            {/* Status indicator */}
-                                            <div style={{
-                                                width: '8px', height: '8px', borderRadius: '50%', marginTop: '5px', flexShrink: 0,
-                                                background: item.done ? 'var(--success, #10b981)' : item.inProgress ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                                            }} />
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{
-                                                    fontSize: '13px', fontWeight: 500, lineHeight: '20px',
-                                                    textDecoration: item.done ? 'line-through' : 'none',
-                                                    color: item.done ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                                                }}>{displayTitle}</div>
-                                                {displaySubtitle && (
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'monospace', marginTop: '2px' }}>
-                                                        {displaySubtitle}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {/* Trigger count badge */}
-                                            {itemTriggers.length > 0 && (
-                                                <span style={{
-                                                    fontSize: '11px', color: 'var(--text-tertiary)',
-                                                    padding: '2px 8px', borderRadius: '10px',
-                                                    background: 'var(--bg-secondary)',
-                                                    whiteSpace: 'nowrap',
-                                                }}>
-                                                    {itemTriggers.length} trigger{itemTriggers.length > 1 ? 's' : ''}
-                                                </span>
-                                            )}
-                                            {/* Expand arrow */}
-                                            <span style={{
-                                                fontSize: '11px', color: 'var(--text-tertiary)',
-                                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                                                transition: 'transform 0.15s',
-                                                marginTop: '4px',
-                                            }}>&#9654;</span>
-                                        </div>
-
-                                        {/* Expanded content */}
-                                        {isExpanded && (
-                                            <div style={{ padding: '0 16px 12px 36px', borderTop: '1px solid var(--border-subtle)' }}>
-                                                {/* Nested Triggers */}
-                                                {itemTriggers.length > 0 && (
-                                                    <div style={{ marginTop: '12px' }}>
-                                                        {itemTriggers.map((trig: any) => (
-                                                            <div key={trig.id} style={{
-                                                                display: 'flex', alignItems: 'center', gap: '10px',
-                                                                padding: '8px 12px', marginBottom: '4px',
-                                                                borderRadius: '6px', background: 'var(--bg-secondary)',
-                                                                opacity: trig.is_enabled ? 1 : 0.5,
-                                                            }}>
-                                                                <div style={{ flex: 1 }}>
-                                                                    <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)' }}>
-                                                                        {triggerToHuman(trig)}
-                                                                    </div>
-                                                                    {trig.reason && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{trig.reason}</div>}
-                                                                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'monospace' }}>
-                                                                        {trig.type === 'cron' ? trig.config?.expr : ''}{' '}
-                                                                    </div>
-                                                                </div>
-                                                                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
-                                                                    {t('agent.aware.fired', { count: trig.fire_count })}
-                                                                </span>
-                                                                {!trig.is_enabled && (
-                                                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{t('agent.aware.disabled')}</span>
-                                                                )}
-                                                                <div style={{ display: 'flex', gap: '4px' }}>
-                                                                    <button className="btn btn-ghost" style={{ padding: '2px 6px', fontSize: '11px' }}
-                                                                        onClick={async (e) => {
-                                                                            e.stopPropagation();
-                                                                            await triggerApi.update(id!, trig.id, { is_enabled: !trig.is_enabled });
-                                                                            refetchTriggers();
-                                                                        }}>
-                                                                        {trig.is_enabled ? t('agent.aware.disable') : t('agent.aware.enable')}
-                                                                    </button>
-                                                                    <button className="btn btn-ghost" style={{ padding: '2px 6px', fontSize: '11px', color: 'var(--error)' }}
-                                                                        onClick={async (e) => {
-                                                                            e.stopPropagation();
-                                                                            if (confirm(t('agent.aware.deleteTriggerConfirm', { name: trig.name }))) {
-                                                                                await triggerApi.delete(id!, trig.id);
-                                                                                refetchTriggers();
-                                                                            }
-                                                                        }}>
-                                                                        {t('common.delete', 'Delete')}
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {/* Activity Logs for this focus */}
-                                                {itemLogs.length > 0 && (
-                                                    <div style={{ marginTop: '12px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: '6px' }}>
-                                                            {t('agent.aware.reflections')}
-                                                        </div>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                            {itemLogs.slice(0, 10).map((log: any) => (
-                                                                <div key={log.id} style={{
-                                                                    padding: '6px 12px', borderRadius: '6px',
-                                                                    background: 'var(--bg-secondary)',
-                                                                    borderLeft: '2px solid var(--border-subtle)',
-                                                                }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                                                                        <span style={{
-                                                                            fontSize: '10px', padding: '1px 5px', borderRadius: '3px',
-                                                                            background: log.action_type === 'trigger_fired' ? 'rgba(var(--accent-primary-rgb, 99,102,241), 0.1)' : 'var(--bg-tertiary, #e5e7eb)',
-                                                                            color: log.action_type === 'trigger_fired' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-                                                                            fontWeight: 500,
-                                                                        }}>{log.action_type?.replace('trigger_', '')}</span>
-                                                                        <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                                                                            {new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{log.summary}</div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {itemTriggers.length === 0 && itemLogs.length === 0 && (
-                                                    <div style={{ padding: '12px 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                                                        {t('agent.aware.noTriggers')}
-                                                    </div>
-                                                )}
+                        return (
+                            <div key={item.id} style={{
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-subtle)',
+                                overflow: 'hidden',
+                                marginBottom: '6px',
+                                background: 'var(--bg-primary)',
+                            }}>
+                                {/* Focus Item Header */}
+                                <div
+                                    onClick={() => setExpandedFocus(isExpanded ? null : item.id)}
+                                    style={{
+                                        padding: '12px 16px',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '12px',
+                                        cursor: 'pointer',
+                                        transition: 'background 0.15s',
+                                    }}
+                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                >
+                                    {/* Status indicator */}
+                                    <div style={{
+                                        width: '8px', height: '8px', borderRadius: '50%', marginTop: '5px', flexShrink: 0,
+                                        background: item.done ? 'var(--success, #10b981)' : item.inProgress ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                                    }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{
+                                            fontSize: '13px', fontWeight: 500, lineHeight: '20px',
+                                            textDecoration: item.done ? 'line-through' : 'none',
+                                            color: item.done ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                        }}>{displayTitle}</div>
+                                        {displaySubtitle && (
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'monospace', marginTop: '2px' }}>
+                                                {displaySubtitle}
                                             </div>
                                         )}
                                     </div>
-                                );
-                            })}
+                                    {/* Trigger count badge */}
+                                    {itemTriggers.length > 0 && (
+                                        <span style={{
+                                            fontSize: '11px', color: 'var(--text-tertiary)',
+                                            padding: '2px 8px', borderRadius: '10px',
+                                            background: 'var(--bg-secondary)',
+                                            whiteSpace: 'nowrap',
+                                        }}>
+                                            {itemTriggers.length} trigger{itemTriggers.length > 1 ? 's' : ''}
+                                        </span>
+                                    )}
+                                    {/* Expand arrow */}
+                                    <span style={{
+                                        fontSize: '11px', color: 'var(--text-tertiary)',
+                                        transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                        transition: 'transform 0.15s',
+                                        marginTop: '4px',
+                                    }}>&#9654;</span>
+                                </div>
 
-                            {/* Standalone Triggers (not linked to any focus item) */}
+                                {/* Expanded content */}
+                                {isExpanded && (
+                                    <div style={{ padding: '0 16px 12px 36px', borderTop: '1px solid var(--border-subtle)' }}>
+                                        {/* Nested Triggers */}
+                                        {itemTriggers.length > 0 && (
+                                            <div style={{ marginTop: '12px' }}>
+                                                {itemTriggers.map((trig: any) => (
+                                                    <div key={trig.id} style={{
+                                                        display: 'flex', alignItems: 'center', gap: '10px',
+                                                        padding: '8px 12px', marginBottom: '4px',
+                                                        borderRadius: '6px', background: 'var(--bg-secondary)',
+                                                        opacity: trig.is_enabled ? 1 : 0.5,
+                                                    }}>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                                                                {triggerToHuman(trig)}
+                                                            </div>
+                                                            {trig.reason && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{trig.reason}</div>}
+                                                            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'monospace' }}>
+                                                                {trig.type === 'cron' ? trig.config?.expr : ''}{' '}
+                                                            </div>
+                                                        </div>
+                                                        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                                                            {t('agent.aware.fired', { count: trig.fire_count })}
+                                                        </span>
+                                                        {!trig.is_enabled && (
+                                                            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{t('agent.aware.disabled')}</span>
+                                                        )}
+                                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                                            <button className="btn btn-ghost" style={{ padding: '2px 6px', fontSize: '11px' }}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    await triggerApi.update(id!, trig.id, { is_enabled: !trig.is_enabled });
+                                                                    refetchTriggers();
+                                                                }}>
+                                                                {trig.is_enabled ? t('agent.aware.disable') : t('agent.aware.enable')}
+                                                            </button>
+                                                            <button className="btn btn-ghost" style={{ padding: '2px 6px', fontSize: '11px', color: 'var(--error)' }}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (confirm(t('agent.aware.deleteTriggerConfirm', { name: trig.name }))) {
+                                                                        await triggerApi.delete(id!, trig.id);
+                                                                        refetchTriggers();
+                                                                    }
+                                                                }}>
+                                                                {t('common.delete', 'Delete')}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Activity Logs for this focus */}
+                                        {itemLogs.length > 0 && (
+                                            <div style={{ marginTop: '12px' }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                    {t('agent.aware.reflections')}
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    {itemLogs.slice(0, 10).map((log: any) => (
+                                                        <div key={log.id} style={{
+                                                            padding: '6px 12px', borderRadius: '6px',
+                                                            background: 'var(--bg-secondary)',
+                                                            borderLeft: '2px solid var(--border-subtle)',
+                                                        }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                                                <span style={{
+                                                                    fontSize: '10px', padding: '1px 5px', borderRadius: '3px',
+                                                                    background: log.action_type === 'trigger_fired' ? 'rgba(var(--accent-primary-rgb, 99,102,241), 0.1)' : 'var(--bg-tertiary, #e5e7eb)',
+                                                                    color: log.action_type === 'trigger_fired' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                                                                    fontWeight: 500,
+                                                                }}>{log.action_type?.replace('trigger_', '')}</span>
+                                                                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                                                                    {new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{log.summary}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {itemTriggers.length === 0 && itemLogs.length === 0 && (
+                                            <div style={{ padding: '12px 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                                {t('agent.aware.noTriggers')}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    };
+
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {/* ── Focus Section ── */}
+                            <div className="card" style={{ marginBottom: '16px', padding: '16px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <div>
+                                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('agent.aware.focus')}</h4>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.aware.focusDesc')}</span>
+                                    </div>
+                                    {hasFocusItems && (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                            {activeFocusItems.length} active{completedFocusItems.length > 0 ? ` · ${completedFocusItems.length} done` : ''}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Active Focus Items */}
+                                {visibleActiveFocus.map(renderFocusItem)}
+
+                                {/* Show more active items */}
+                                {hiddenActiveCount > 0 && (
+                                    <button
+                                        onClick={() => setShowAllFocus(true)}
+                                        className="btn btn-ghost"
+                                        style={{ width: '100%', fontSize: '12px', color: 'var(--text-tertiary)', padding: '8px', marginTop: '4px' }}
+                                    >
+                                        {i18n.language?.startsWith('zh') ? `显示更多 ${hiddenActiveCount} 项...` : `Show ${hiddenActiveCount} more...`}
+                                    </button>
+                                )}
+                                {showAllFocus && activeFocusItems.length > SECTION_PAGE_SIZE && (
+                                    <button
+                                        onClick={() => setShowAllFocus(false)}
+                                        className="btn btn-ghost"
+                                        style={{ width: '100%', fontSize: '12px', color: 'var(--text-tertiary)', padding: '8px', marginTop: '4px' }}
+                                    >
+                                        {i18n.language?.startsWith('zh') ? '收起' : 'Show less'}
+                                    </button>
+                                )}
+
+                                {/* Completed Focus Items — auto-collapsed */}
+                                {completedFocusItems.length > 0 && (
+                                    <>
+                                        <button
+                                            onClick={() => setShowCompletedFocus(!showCompletedFocus)}
+                                            className="btn btn-ghost"
+                                            style={{
+                                                width: '100%', fontSize: '12px', color: 'var(--text-tertiary)',
+                                                padding: '8px', marginTop: '8px',
+                                                borderTop: '1px solid var(--border-subtle)',
+                                                borderRadius: 0,
+                                            }}
+                                        >
+                                            {showCompletedFocus
+                                                ? (i18n.language?.startsWith('zh') ? '隐藏已完成' : 'Hide completed')
+                                                : (i18n.language?.startsWith('zh') ? `显示 ${completedFocusItems.length} 项已完成` : `Show ${completedFocusItems.length} completed`)
+                                            }
+                                        </button>
+                                        {showCompletedFocus && completedFocusItems.map(renderFocusItem)}
+                                    </>
+                                )}
+
+                                {/* Empty state */}
+                                {!hasFocusItems && (
+                                    <div style={{
+                                        padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)',
+                                        border: '1px dashed var(--border-subtle)', borderRadius: '8px',
+                                    }}>
+                                        {t('agent.aware.focusEmpty')}
+                                    </div>
+                                )}
+                            </div>
+                            {/* ── Standalone Triggers Card ── */}
                             {hasStandalone && (
-                                <div style={{ marginTop: hasFocusItems ? '16px' : '0' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                                        {t('agent.aware.standaloneTriggers')}
+                                <div className="card" style={{ marginBottom: '16px', padding: '16px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('agent.aware.standaloneTriggers')}</h4>
+                                        </div>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                            {standaloneTriggers.length} trigger{standaloneTriggers.length > 1 ? 's' : ''}
+                                        </span>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {standaloneTriggers.map((trig: any) => (
+                                        {(showAllTriggers ? standaloneTriggers : standaloneTriggers.slice(0, SECTION_PAGE_SIZE)).map((trig: any) => (
                                             <div key={trig.id} style={{
                                                 padding: '10px 14px', borderRadius: '8px',
                                                 border: '1px solid var(--border-subtle)',
@@ -1968,170 +2045,193 @@ function AgentDetailInner() {
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Empty state */}
-                            {!hasFocusItems && !hasStandalone && (
-                                <div style={{
-                                    padding: '40px', textAlign: 'center', color: 'var(--text-tertiary)',
-                                    border: '1px dashed var(--border-subtle)', borderRadius: '8px',
-                                }}>
-                                    {t('agent.aware.focusEmpty')}
+                                    {standaloneTriggers.length > SECTION_PAGE_SIZE && (
+                                        <button
+                                            onClick={() => setShowAllTriggers(!showAllTriggers)}
+                                            className="btn btn-ghost"
+                                            style={{ width: '100%', fontSize: '12px', color: 'var(--text-tertiary)', padding: '8px', marginTop: '4px' }}
+                                        >
+                                            {showAllTriggers
+                                                ? (i18n.language?.startsWith('zh') ? '收起' : 'Show less')
+                                                : (i18n.language?.startsWith('zh') ? `显示更多 ${standaloneTriggers.length - SECTION_PAGE_SIZE} 项...` : `Show ${standaloneTriggers.length - SECTION_PAGE_SIZE} more...`)
+                                            }
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
                             {/* Raw markdown toggle */}
                             {raw && (
-                                <details style={{ marginTop: '12px' }}>
+                                <details style={{ marginTop: '4px', marginBottom: '16px' }}>
                                     <summary style={{ fontSize: '11px', color: 'var(--text-tertiary)', cursor: 'pointer' }}>{t('agent.aware.viewRawMarkdown')}</summary>
                                     <pre style={{ fontSize: '11px', marginTop: '8px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '6px', whiteSpace: 'pre-wrap', maxHeight: '300px', overflow: 'auto' }}>{raw}</pre>
                                 </details>
                             )}
 
-                            {/* ── Reflections (Pulse Sessions) ── */}
-                            {pulseSessions.length > 0 && (
-                                <div style={{ marginTop: '24px' }}>
-                                    <div style={{ marginBottom: '12px' }}>
-                                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('agent.aware.reflections')}</h4>
-                                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.aware.reflectionsDesc')}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {pulseSessions.map((session: any) => {
-                                            const isExpanded = expandedReflection === session.id;
-                                            const msgs = reflectionMessages[session.id] || [];
-                                            return (
-                                                <div key={session.id} style={{
-                                                    borderRadius: '8px',
-                                                    border: '1px solid var(--border-subtle)',
-                                                    overflow: 'hidden',
-                                                    background: 'var(--bg-primary)',
-                                                }}>
-                                                    <div
-                                                        onClick={async () => {
-                                                            if (isExpanded) {
-                                                                setExpandedReflection(null);
-                                                                return;
-                                                            }
-                                                            setExpandedReflection(session.id);
-                                                            // Load messages if not cached
-                                                            if (!reflectionMessages[session.id]) {
-                                                                try {
-                                                                    const tkn = localStorage.getItem('token');
-                                                                    const res = await fetch(`/api/agents/${id}/sessions/${session.id}/messages`, {
-                                                                        headers: { Authorization: `Bearer ${tkn}` },
-                                                                    });
-                                                                    if (res.ok) {
-                                                                        const data = await res.json();
-                                                                        setReflectionMessages(prev => ({ ...prev, [session.id]: data }));
-                                                                    }
-                                                                } catch { /* ignore */ }
-                                                            }
-                                                        }}
-                                                        style={{
-                                                            padding: '10px 16px',
-                                                            display: 'flex', alignItems: 'center', gap: '10px',
-                                                            cursor: 'pointer', transition: 'background 0.15s',
-                                                        }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                                    >
-                                                        <div style={{
-                                                            width: '6px', height: '6px', borderRadius: '50%',
-                                                            background: 'var(--accent-primary)', flexShrink: 0,
-                                                        }} />
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ fontSize: '12px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                {(session.title || 'Trigger execution').replace(/^🤖\s*/, '')}
-                                                            </div>
-                                                            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '1px' }}>
-                                                                {new Date(session.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                                {session.message_count > 0 && ` · ${session.message_count} msg`}
-                                                            </div>
-                                                        </div>
-                                                        <span style={{
-                                                            fontSize: '11px', color: 'var(--text-tertiary)',
-                                                            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                                                            transition: 'transform 0.15s',
-                                                        }}>&#9654;</span>
-                                                    </div>
-                                                    {isExpanded && (
-                                                        <div style={{ padding: '0 16px 12px', borderTop: '1px solid var(--border-subtle)' }}>
-                                                            {msgs.length === 0 ? (
-                                                                <div style={{ padding: '12px 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>Loading...</div>
-                                                            ) : (
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-                                                                    {msgs.map((msg: any, mi: number) => {
-                                                                        if (msg.role === 'tool_call') {
-                                                                            let parsed: any = {};
-                                                                            try { parsed = JSON.parse(msg.content || '{}'); } catch { }
-                                                                            return (
-                                                                                <div key={mi} style={{
-                                                                                    padding: '6px 10px', borderRadius: '6px',
-                                                                                    background: 'var(--bg-secondary)',
-                                                                                    borderLeft: '2px solid var(--accent-primary)',
-                                                                                    fontSize: '11px',
-                                                                                }}>
-                                                                                    <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{parsed.name || 'tool'}</span>
-                                                                                    <span style={{ color: 'var(--text-tertiary)', marginLeft: '6px' }}>
-                                                                                        {JSON.stringify(parsed.args || {}).substring(0, 100)}
-                                                                                    </span>
-                                                                                </div>
-                                                                            );
+                            {/* ── Reflections Card ── */}
+                            {pulseSessions.length > 0 && (() => {
+                                const visibleSessions = showAllReflections ? pulseSessions : pulseSessions.slice(0, SECTION_PAGE_SIZE);
+                                const hiddenCount = pulseSessions.length - visibleSessions.length;
+                                return (
+                                    <div className="card" style={{ padding: '16px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                            <div>
+                                                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('agent.aware.reflections')}</h4>
+                                                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.aware.reflectionsDesc')}</span>
+                                            </div>
+                                            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                                {pulseSessions.length} session{pulseSessions.length > 1 ? 's' : ''}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            {visibleSessions.map((session: any) => {
+                                                const isExpanded = expandedReflection === session.id;
+                                                const msgs = reflectionMessages[session.id] || [];
+                                                return (
+                                                    <div key={session.id} style={{
+                                                        borderRadius: '8px',
+                                                        border: '1px solid var(--border-subtle)',
+                                                        overflow: 'hidden',
+                                                        background: 'var(--bg-primary)',
+                                                    }}>
+                                                        <div
+                                                            onClick={async () => {
+                                                                if (isExpanded) {
+                                                                    setExpandedReflection(null);
+                                                                    return;
+                                                                }
+                                                                setExpandedReflection(session.id);
+                                                                // Load messages if not cached
+                                                                if (!reflectionMessages[session.id]) {
+                                                                    try {
+                                                                        const tkn = localStorage.getItem('token');
+                                                                        const res = await fetch(`/api/agents/${id}/sessions/${session.id}/messages`, {
+                                                                            headers: { Authorization: `Bearer ${tkn}` },
+                                                                        });
+                                                                        if (res.ok) {
+                                                                            const data = await res.json();
+                                                                            setReflectionMessages(prev => ({ ...prev, [session.id]: data }));
                                                                         }
-                                                                        if (msg.role === 'tool_result') {
-                                                                            let parsed: any = {};
-                                                                            try { parsed = JSON.parse(msg.content || '{}'); } catch { }
-                                                                            return (
-                                                                                <div key={mi} style={{
-                                                                                    padding: '6px 10px', borderRadius: '6px',
-                                                                                    background: 'var(--bg-secondary)',
-                                                                                    borderLeft: '2px solid var(--success, #10b981)',
-                                                                                    fontSize: '11px', color: 'var(--text-secondary)',
-                                                                                    maxHeight: '100px', overflow: 'auto',
-                                                                                }}>
-                                                                                    <span style={{ fontWeight: 500 }}>{parsed.name || 'result'}:</span>{' '}
-                                                                                    <span>{(parsed.result || '').substring(0, 200)}</span>
-                                                                                </div>
-                                                                            );
-                                                                        }
-                                                                        if (msg.role === 'assistant') {
-                                                                            return (
-                                                                                <div key={mi} style={{
-                                                                                    padding: '8px 10px', borderRadius: '6px',
-                                                                                    background: 'var(--bg-secondary)',
-                                                                                    fontSize: '12px', color: 'var(--text-primary)',
-                                                                                    whiteSpace: 'pre-wrap', lineHeight: '1.5',
-                                                                                    maxHeight: '200px', overflow: 'auto',
-                                                                                }}>
-                                                                                    {msg.content}
-                                                                                </div>
-                                                                            );
-                                                                        }
-                                                                        if (msg.role === 'user') {
-                                                                            return (
-                                                                                <div key={mi} style={{
-                                                                                    padding: '6px 10px', borderRadius: '6px',
-                                                                                    background: 'rgba(var(--accent-primary-rgb, 99,102,241), 0.08)',
-                                                                                    fontSize: '11px', color: 'var(--text-secondary)',
-                                                                                    whiteSpace: 'pre-wrap', maxHeight: '100px', overflow: 'auto',
-                                                                                }}>
-                                                                                    {(msg.content || '').substring(0, 300)}
-                                                                                </div>
-                                                                            );
-                                                                        }
-                                                                        return null;
-                                                                    })}
+                                                                    } catch { /* ignore */ }
+                                                                }
+                                                            }}
+                                                            style={{
+                                                                padding: '10px 16px',
+                                                                display: 'flex', alignItems: 'center', gap: '10px',
+                                                                cursor: 'pointer', transition: 'background 0.15s',
+                                                            }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                                        >
+                                                            <div style={{
+                                                                width: '6px', height: '6px', borderRadius: '50%',
+                                                                background: 'var(--accent-primary)', flexShrink: 0,
+                                                            }} />
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ fontSize: '12px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                    {(session.title || 'Trigger execution').replace(/^🤖\s*/, '')}
                                                                 </div>
-                                                            )}
+                                                                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '1px' }}>
+                                                                    {new Date(session.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                                    {session.message_count > 0 && ` · ${session.message_count} msg`}
+                                                                </div>
+                                                            </div>
+                                                            <span style={{
+                                                                fontSize: '11px', color: 'var(--text-tertiary)',
+                                                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                                                transition: 'transform 0.15s',
+                                                            }}>&#9654;</span>
                                                         </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
+                                                        {isExpanded && (
+                                                            <div style={{ padding: '0 16px 12px', borderTop: '1px solid var(--border-subtle)' }}>
+                                                                {msgs.length === 0 ? (
+                                                                    <div style={{ padding: '12px 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>Loading...</div>
+                                                                ) : (
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                                                                        {msgs.map((msg: any, mi: number) => {
+                                                                            if (msg.role === 'tool_call') {
+                                                                                let parsed: any = {};
+                                                                                try { parsed = JSON.parse(msg.content || '{}'); } catch { }
+                                                                                return (
+                                                                                    <div key={mi} style={{
+                                                                                        padding: '6px 10px', borderRadius: '6px',
+                                                                                        background: 'var(--bg-secondary)',
+                                                                                        borderLeft: '2px solid var(--accent-primary)',
+                                                                                        fontSize: '11px',
+                                                                                    }}>
+                                                                                        <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{parsed.name || 'tool'}</span>
+                                                                                        <span style={{ color: 'var(--text-tertiary)', marginLeft: '6px' }}>
+                                                                                            {JSON.stringify(parsed.args || {}).substring(0, 100)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            if (msg.role === 'tool_result') {
+                                                                                let parsed: any = {};
+                                                                                try { parsed = JSON.parse(msg.content || '{}'); } catch { }
+                                                                                return (
+                                                                                    <div key={mi} style={{
+                                                                                        padding: '6px 10px', borderRadius: '6px',
+                                                                                        background: 'var(--bg-secondary)',
+                                                                                        borderLeft: '2px solid var(--success, #10b981)',
+                                                                                        fontSize: '11px', color: 'var(--text-secondary)',
+                                                                                        maxHeight: '100px', overflow: 'auto',
+                                                                                    }}>
+                                                                                        <span style={{ fontWeight: 500 }}>{parsed.name || 'result'}:</span>{' '}
+                                                                                        <span>{(parsed.result || '').substring(0, 200)}</span>
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            if (msg.role === 'assistant') {
+                                                                                return (
+                                                                                    <div key={mi} style={{
+                                                                                        padding: '8px 10px', borderRadius: '6px',
+                                                                                        background: 'var(--bg-secondary)',
+                                                                                        fontSize: '12px', color: 'var(--text-primary)',
+                                                                                        whiteSpace: 'pre-wrap', lineHeight: '1.5',
+                                                                                        maxHeight: '200px', overflow: 'auto',
+                                                                                    }}>
+                                                                                        {msg.content}
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            if (msg.role === 'user') {
+                                                                                return (
+                                                                                    <div key={mi} style={{
+                                                                                        padding: '6px 10px', borderRadius: '6px',
+                                                                                        background: 'rgba(var(--accent-primary-rgb, 99,102,241), 0.08)',
+                                                                                        fontSize: '11px', color: 'var(--text-secondary)',
+                                                                                        whiteSpace: 'pre-wrap', maxHeight: '100px', overflow: 'auto',
+                                                                                    }}>
+                                                                                        {(msg.content || '').substring(0, 300)}
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            return null;
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {pulseSessions.length > SECTION_PAGE_SIZE && (
+                                            <button
+                                                onClick={() => setShowAllReflections(!showAllReflections)}
+                                                className="btn btn-ghost"
+                                                style={{ width: '100%', fontSize: '12px', color: 'var(--text-tertiary)', padding: '8px', marginTop: '4px' }}
+                                            >
+                                                {showAllReflections
+                                                    ? (i18n.language?.startsWith('zh') ? '收起' : 'Show less')
+                                                    : (i18n.language?.startsWith('zh') ? `显示更多 ${hiddenCount} 条...` : `Show ${hiddenCount} more...`)
+                                                }
+                                            </button>
+                                        )}
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
                     );
                 })()}
