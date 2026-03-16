@@ -8,18 +8,6 @@
 
 set -e
 
-# --- Permission fixing (skip gosu on Railway / non-root environments) ---
-if [ "$(id -u)" = '0' ] && [ -d "${AGENT_DATA_DIR:-/data/agents}" ]; then
-    echo "[entrypoint] Detected root user, fixing permissions..."
-    chown -R clawith:clawith "${AGENT_DATA_DIR:-/data/agents}" 2>/dev/null || true
-    # Drop privileges via gosu if available, otherwise continue as root
-    if command -v gosu >/dev/null 2>&1; then
-        echo "[entrypoint] Dropping privileges to 'clawith'..."
-        exec gosu clawith /bin/bash "$0" "$@"
-    fi
-fi
-# -------------------------------------------------------
-
 echo "[entrypoint] Step 1: Creating/verifying database tables..."
 
 python << 'PYEOF'

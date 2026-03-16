@@ -23,7 +23,7 @@ FROM python:3.12-slim AS production
 
 WORKDIR /app
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 curl gosu && \
+    apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from deps stage
@@ -38,8 +38,7 @@ RUN useradd --create-home clawith && \
     chmod +x /app/entrypoint.sh && \
     chown -R clawith:clawith /app /data
 
-# Note: USER is removed to allow entrypoint.sh to fix permissions of mounted volumes
-# at runtime. The entrypoint script will drop privileges to 'clawith' after fixing permissions.
+USER clawith
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
