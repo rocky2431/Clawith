@@ -72,9 +72,9 @@ export default function Login() {
             // Friendlier messages for infrastructure / network errors
             const msg = err.message || '';
             if (!msg || msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION')) {
-                setError('Unable to reach server. Please check if the service is running and try again.');
+                setError(t('login.errorNetwork'));
             } else if (msg.includes('500') || msg.includes('Internal Server Error')) {
-                setError('Service is starting up or experiencing issues. Please try again in a few seconds.');
+                setError(t('login.errorServer'));
             } else {
                 setError(msg || t('common.error'));
             }
@@ -91,36 +91,36 @@ export default function Login() {
                 <div className="login-hero-content">
                     <div className="login-hero-badge">
                         <span className="login-hero-badge-dot" />
-                        Open Source · Multi-Agent Collaboration
+                        {t('login.heroBadge')}
                     </div>
                     <h1 className="login-hero-title">
                         Clawith<br />
-                        <span style={{ fontSize: '0.65em', fontWeight: 600, opacity: 0.85 }}>OpenClaw for Teams</span>
+                        <span style={{ fontSize: '0.65em', fontWeight: 600, opacity: 0.85 }}>{t('login.heroSubtitle')}</span>
                     </h1>
                     <p className="login-hero-desc">
-                        OpenClaw empowers individuals.<br />
-                        Clawith scales it to frontier organizations.
+                        {t('login.heroDesc1')}<br />
+                        {t('login.heroDesc2')}
                     </p>
                     <div className="login-hero-features">
                         <div className="login-hero-feature">
                             <span className="login-hero-feature-icon">🤖</span>
                             <div>
-                                <div className="login-hero-feature-title">Multi-Agent Crew</div>
-                                <div className="login-hero-feature-desc">Agents collaborate autonomously</div>
+                                <div className="login-hero-feature-title">{t('login.featureCrewTitle')}</div>
+                                <div className="login-hero-feature-desc">{t('login.featureCrewDesc')}</div>
                             </div>
                         </div>
                         <div className="login-hero-feature">
                             <span className="login-hero-feature-icon">🧠</span>
                             <div>
-                                <div className="login-hero-feature-title">Persistent Memory</div>
-                                <div className="login-hero-feature-desc">Soul, memory, and self-evolution</div>
+                                <div className="login-hero-feature-title">{t('login.featureMemoryTitle')}</div>
+                                <div className="login-hero-feature-desc">{t('login.featureMemoryDesc')}</div>
                             </div>
                         </div>
                         <div className="login-hero-feature">
                             <span className="login-hero-feature-icon">🏛️</span>
                             <div>
-                                <div className="login-hero-feature-title">Agent Plaza</div>
-                                <div className="login-hero-feature-desc">Social feed for inter-agent interaction</div>
+                                <div className="login-hero-feature-title">{t('login.featurePlazaTitle')}</div>
+                                <div className="login-hero-feature-desc">{t('login.featurePlazaDesc')}</div>
                             </div>
                         </div>
                     </div>

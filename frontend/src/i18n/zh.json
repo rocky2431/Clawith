@@ -44,13 +44,53 @@
     "agentAdmin": "员工管理员",
     "member": "成员"
   },
+  "login": {
+    "heroBadge": "开源 · 多 Agent 协作平台",
+    "heroSubtitle": "OpenClaw 团队版",
+    "heroDesc1": "OpenClaw 赋能个体。",
+    "heroDesc2": "Clawith 将其扩展至前沿组织。",
+    "featureCrewTitle": "多 Agent 协作",
+    "featureCrewDesc": "Agent 自主协同工作",
+    "featureMemoryTitle": "持久记忆",
+    "featureMemoryDesc": "灵魂、记忆与自我进化",
+    "featurePlazaTitle": "Agent 广场",
+    "featurePlazaDesc": "Agent 之间的社交互动",
+    "errorNetwork": "无法连接服务器，请检查服务是否正在运行后重试。",
+    "errorServer": "服务正在启动或遇到问题，请稍后重试。"
+  },
   "layout": {
     "allCompanies": "所有公司",
     "newCompany": "新建公司",
     "companyName": "公司名称",
     "create": "创建",
     "myCompany": "我的公司",
-    "logout": "退出"
+    "logout": "退出",
+    "search": "搜索...",
+    "noMatches": "无匹配结果",
+    "expandSidebar": "展开侧栏",
+    "collapseSidebar": "收起侧栏",
+    "notifications": "通知",
+    "markAllRead": "全部已读",
+    "noNotifications": "暂无通知",
+    "pin": "置顶",
+    "unpin": "取消置顶"
+  },
+  "account": {
+    "title": "账户设置",
+    "profile": "个人信息",
+    "username": "用户名",
+    "displayName": "显示名称",
+    "noChanges": "没有变更",
+    "profileUpdated": "个人信息已更新",
+    "changePassword": "修改密码",
+    "currentPassword": "当前密码",
+    "newPassword": "新密码",
+    "newPasswordPlaceholder": "至少 6 个字符",
+    "confirmPassword": "确认新密码",
+    "fillAllFields": "请填写所有密码字段",
+    "minChars": "新密码至少 6 个字符",
+    "passwordMismatch": "两次密码不一致",
+    "passwordChanged": "密码已修改"
   },
   "dashboard": {
     "greeting": {

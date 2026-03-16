@@ -44,13 +44,53 @@
     "agentAdmin": "Agent Admin",
     "member": "Member"
   },
+  "login": {
+    "heroBadge": "Open Source · Multi-Agent Collaboration",
+    "heroSubtitle": "OpenClaw for Teams",
+    "heroDesc1": "OpenClaw empowers individuals.",
+    "heroDesc2": "Clawith scales it to frontier organizations.",
+    "featureCrewTitle": "Multi-Agent Crew",
+    "featureCrewDesc": "Agents collaborate autonomously",
+    "featureMemoryTitle": "Persistent Memory",
+    "featureMemoryDesc": "Soul, memory, and self-evolution",
+    "featurePlazaTitle": "Agent Plaza",
+    "featurePlazaDesc": "Social feed for inter-agent interaction",
+    "errorNetwork": "Unable to reach server. Please check if the service is running and try again.",
+    "errorServer": "Service is starting up or experiencing issues. Please try again in a few seconds."
+  },
   "layout": {
     "allCompanies": "All Companies",
     "newCompany": "New Company",
     "companyName": "Company Name",
     "create": "Create",
     "myCompany": "My Company",
-    "logout": "Log out"
+    "logout": "Log out",
+    "search": "Search...",
+    "noMatches": "No matches",
+    "expandSidebar": "Expand Sidebar",
+    "collapseSidebar": "Collapse Sidebar",
+    "notifications": "Notifications",
+    "markAllRead": "Mark all read",
+    "noNotifications": "No notifications",
+    "pin": "Pin to top",
+    "unpin": "Unpin"
+  },
+  "account": {
+    "title": "Account Settings",
+    "profile": "Profile",
+    "username": "Username",
+    "displayName": "Display Name",
+    "noChanges": "No changes",
+    "profileUpdated": "Profile updated",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "newPasswordPlaceholder": "Min 6 characters",
+    "confirmPassword": "Confirm New Password",
+    "fillAllFields": "Fill all password fields",
+    "minChars": "Min 6 characters",
+    "passwordMismatch": "Passwords do not match",
+    "passwordChanged": "Password changed"
   },
   "dashboard": {
     "greeting": {
