@@ -403,8 +403,12 @@
       "boundariesPlaceholder": "不可修改财务数据、对外沟通需经审批..."
     },
     "step3": {
-      "title": "技能配置",
+      "title": "技能与工具",
       "description": "选择数字员工的技能，创建后可在详情页继续编辑。",
+      "toolsTitle": "工具",
+      "toolsDescription": "选择数字员工可使用的工具，默认工具已自动开启。",
+      "noSkills": "暂无可用技能，请在企业设置中添加。",
+      "noTools": "暂无可用工具。",
       "infoSearch": "信息搜索",
       "infoSearchDesc": "联网搜索和信息检索",
       "dataAnalysis": "数据分析",
@@ -610,6 +614,7 @@
     "all": "全部",
     "none": "无",
     "download": "下载",
+    "default": "默认",
     "channels": {
       "feishu": "飞书",
       "discord": "Discord",
@@ -618,6 +623,16 @@
       "dingtalk": "钉钉",
       "wecom": "企业微信"
     }
+  },
+  "toolCategory": {
+    "general": "通用",
+    "file": "文件操作",
+    "task": "任务管理",
+    "communication": "通讯",
+    "search": "搜索",
+    "feishu": "飞书",
+    "custom": "自定义",
+    "mcp": "MCP 工具"
   },
   "openclaw": {
     "created": "OpenClaw Agent 已创建",

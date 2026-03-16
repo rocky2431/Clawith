@@ -346,6 +346,17 @@ export const skillApi = {
     },
 };
 
+// ─── Tools ───────────────────────────────────────────
+export const toolApi = {
+    list: () => {
+        const tid = localStorage.getItem('current_tenant_id');
+        return request<any[]>(`/tools${tid ? `?tenant_id=${tid}` : ''}`);
+    },
+
+    updateAgentTools: (agentId: string, updates: { tool_id: string; enabled: boolean }[]) =>
+        request<any>(`/tools/agents/${agentId}`, { method: 'PUT', body: JSON.stringify(updates) }),
+};
+
 // ─── Triggers (Pulse Engine) ──────────────────────────
 export const triggerApi = {
     list: (agentId: string) =>

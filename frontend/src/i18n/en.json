@@ -403,8 +403,12 @@
       "boundariesPlaceholder": "Cannot modify financial data, external communication requires approval..."
     },
     "step3": {
-      "title": "Skills Configuration",
+      "title": "Skills & Tools",
       "description": "Select skills for the digital employee. You can edit them later on the detail page.",
+      "toolsTitle": "Tools",
+      "toolsDescription": "Select tools the agent can use. Default tools are pre-enabled.",
+      "noSkills": "No skills available. Add skills in Enterprise Settings.",
+      "noTools": "No tools available.",
       "infoSearch": "Info Search",
       "infoSearchDesc": "Web search and information retrieval",
       "dataAnalysis": "Data Analysis",
@@ -610,6 +614,7 @@
     "all": "All",
     "none": "None",
     "download": "Download",
+    "default": "Default",
     "channels": {
       "feishu": "Feishu",
       "discord": "Discord",
@@ -618,6 +623,16 @@
       "dingtalk": "DingTalk",
       "wecom": "WeCom"
     }
+  },
+  "toolCategory": {
+    "general": "General",
+    "file": "File Operations",
+    "task": "Task Management",
+    "communication": "Communication",
+    "search": "Search",
+    "feishu": "Feishu",
+    "custom": "Custom",
+    "mcp": "MCP Tools"
   },
   "openclaw": {
     "created": "OpenClaw Agent Created",

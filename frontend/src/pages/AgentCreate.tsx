@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agentApi, enterpriseApi, skillApi } from '../services/api';
+import { agentApi, enterpriseApi, skillApi, toolApi } from '../services/api';
 
 const STEPS = ['basicInfo', 'personality', 'skills', 'permissions', 'channel'] as const;
 const OPENCLAW_STEPS = ['basicInfo', 'permissions'] as const;
@@ -39,6 +39,7 @@ export default function AgentCreate() {
         discord_bot_token: '',
         discord_public_key: '',
         skill_ids: [] as string[],
+        tool_ids: [] as string[],
         agent_class: 'internal_tenant',
         security_zone: 'standard',
     });
@@ -64,6 +65,12 @@ export default function AgentCreate() {
         queryFn: skillApi.list,
     });
 
+    // Fetch platform tools for step 3
+    const { data: platformTools = [] } = useQuery({
+        queryKey: ['platform-tools'],
+        queryFn: toolApi.list,
+    });
+
     // Auto-select default skills
     useEffect(() => {
         if (globalSkills.length > 0) {
@@ -77,9 +84,30 @@ export default function AgentCreate() {
         }
     }, [globalSkills]);
 
+    // Auto-select default tools
+    useEffect(() => {
+        if (platformTools.length > 0) {
+            const defaultIds = platformTools.filter((t: any) => t.is_default).map((t: any) => t.id);
+            if (defaultIds.length > 0) {
+                setForm(prev => ({
+                    ...prev,
+                    tool_ids: Array.from(new Set([...prev.tool_ids, ...defaultIds]))
+                }));
+            }
+        }
+    }, [platformTools]);
+
     const createMutation = useMutation({
         mutationFn: async (data: any) => {
             const agent = await agentApi.create(data);
+            // Sync tool selections after agent creation
+            if (data._tool_ids?.length > 0 && agent.id) {
+                const updates = platformTools.map((t: any) => ({
+                    tool_id: t.id,
+                    enabled: data._tool_ids.includes(t.id),
+                }));
+                await toolApi.updateAgentTools(agent.id, updates).catch(() => {});
+            }
             return agent;
         },
         onSuccess: (agent) => {
@@ -109,6 +137,7 @@ export default function AgentCreate() {
             skill_ids: agentType === 'native' ? form.skill_ids : [],
             permission_access_level: form.permission_access_level,
             tenant_id: currentTenant || undefined,
+            _tool_ids: agentType === 'native' ? form.tool_ids : [],
         });
     };
 
@@ -585,10 +614,66 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                             })}
                             {globalSkills.length === 0 && (
                                 <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                                    No skills available. Add skills in Enterprise Settings.
+                                    {t('wizard.step3.noSkills', 'No skills available. Add skills in Enterprise Settings.')}
                                 </div>
                             )}
                         </div>
+
+                        {/* Tools Section */}
+                        <h3 style={{ marginTop: '28px', marginBottom: '12px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step3.toolsTitle', 'Tools')}</h3>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                            {t('wizard.step3.toolsDescription', 'Select tools the agent can use. Default tools are pre-enabled.')}
+                        </p>
+                        {(() => {
+                            const categories = [...new Set(platformTools.map((t: any) => t.category))];
+                            return categories.length > 0 ? categories.map((cat: string) => (
+                                <div key={cat} style={{ marginBottom: '16px' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'capitalize' }}>
+                                        {t(`toolCategory.${cat}`, cat)}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        {platformTools.filter((t: any) => t.category === cat).map((tool: any) => {
+                                            const isDefault = tool.is_default;
+                                            const isChecked = form.tool_ids.includes(tool.id);
+                                            return (
+                                                <label key={tool.id} style={{
+                                                    display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px',
+                                                    background: isChecked ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                                                    border: `1px solid ${isChecked ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                                    borderRadius: '8px', cursor: isDefault ? 'default' : 'pointer',
+                                                    opacity: isDefault ? 0.85 : 1,
+                                                }}>
+                                                    <input type="checkbox"
+                                                        checked={isChecked}
+                                                        disabled={isDefault}
+                                                        onChange={(e) => {
+                                                            if (isDefault) return;
+                                                            if (e.target.checked) {
+                                                                setForm({ ...form, tool_ids: [...form.tool_ids, tool.id] });
+                                                            } else {
+                                                                setForm({ ...form, tool_ids: form.tool_ids.filter((id: string) => id !== tool.id) });
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div style={{ fontSize: '16px' }}>{tool.icon}</div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{tool.display_name}</span>
+                                                            {isDefault && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>{t('common.default', 'Default')}</span>}
+                                                        </div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{tool.description}</div>
+                                                    </div>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )) : (
+                                <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                                    {t('wizard.step3.noTools', 'No tools available.')}
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
 
