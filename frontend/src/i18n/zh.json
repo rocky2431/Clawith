@@ -706,6 +706,17 @@
     "welcomePlaceholder": "例如：你好！我是你的 AI 助手，有什么可以帮你的吗？",
     "welcomeMessageDesc": "当用户在网页端发起新对话时，Agent 会自动发送的欢迎语。支持 Markdown 语法。留空则不发送。"
   },
+  "userMgmt": {
+    "quotaUpdated": "配额已更新",
+    "searchPlaceholder": "搜索用户名、显示名或邮箱…",
+    "userCount": "{{filtered}} / {{total}} 位用户",
+    "joined": "注册时间",
+    "sortToggle": "点击切换排序",
+    "source": "来源",
+    "registered": "注册",
+    "prev": "上一页",
+    "next": "下一页"
+  },
   "openclaw": {
     "created": "OpenClaw Agent 已创建",
     "createdDesc2": "您的 OpenClaw Agent 已注册。复制以下指令并发送给您的 OpenClaw Agent 完成配置。",

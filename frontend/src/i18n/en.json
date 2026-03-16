@@ -706,6 +706,17 @@
     "welcomePlaceholder": "e.g. Hello! I'm your AI assistant. How can I help you?",
     "welcomeMessageDesc": "Greeting message sent automatically when a user starts a new web conversation. Supports Markdown. Leave empty to disable."
   },
+  "userMgmt": {
+    "quotaUpdated": "Quota updated",
+    "searchPlaceholder": "Search username, name or email...",
+    "userCount": "{{filtered}} / {{total}} users",
+    "joined": "Joined",
+    "sortToggle": "Click to toggle sort order",
+    "source": "Source",
+    "registered": "Reg",
+    "prev": "Prev",
+    "next": "Next"
+  },
   "openclaw": {
     "created": "OpenClaw Agent Created",
     "createdDesc2": "Your OpenClaw agent has been registered. Copy the instruction below and send it to your OpenClaw agent to complete the setup.",

@@ -96,7 +96,7 @@ export default function UserManagement() {
                 method: 'PATCH',
                 body: JSON.stringify(editForm),
             });
-            setToast(isChinese ? '✅ 配额已更新' : '✅ Quota updated');
+            setToast(`✅ ${t('userMgmt.quotaUpdated')}`);
             setTimeout(() => setToast(''), 2000);
             setEditingUserId(null);
             loadUsers();
@@ -170,7 +170,7 @@ export default function UserManagement() {
                         <input
                             className="form-input"
                             type="text"
-                            placeholder={isChinese ? '搜索用户名、显示名或邮箱…' : 'Search username, name or email…'}
+                            placeholder={t('userMgmt.searchPlaceholder')}
                             value={searchQuery}
                             onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
                             style={{
@@ -182,7 +182,7 @@ export default function UserManagement() {
                         />
                         {searchQuery && (
                             <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginLeft: '12px' }}>
-                                {isChinese ? `${filtered.length} / ${users.length} 位用户` : `${filtered.length} / ${users.length} users`}
+                                {t('userMgmt.userCount', { filtered: filtered.length, total: users.length })}
                             </span>
                         )}
                     </div>
@@ -193,20 +193,20 @@ export default function UserManagement() {
                         gap: '10px', padding: '10px 16px', fontSize: '11px', fontWeight: 600,
                         color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em',
                     }}>
-                        <div>{t('enterprise.users.user', isChinese ? '用户' : 'User')}</div>
+                        <div>{t('enterprise.users.user')}</div>
                         <div>{t('enterprise.users.email', 'Email')}</div>
                         {/* Created At with sort toggle */}
                         <div
                             style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
                             onClick={toggleSort}
-                            title={isChinese ? '点击切换排序' : 'Click to toggle sort order'}
+                            title={t('userMgmt.sortToggle')}
                         >
-                            {isChinese ? '注册时间' : 'Joined'} {sortOrder === 'asc' ? '↑' : '↓'}
+                            {t('userMgmt.joined')} {sortOrder === 'asc' ? '↑' : '↓'}
                         </div>
-                        <div>{isChinese ? '来源' : 'Source'}</div>
-                        <div>{t('enterprise.users.msgQuota', isChinese ? '消息配额' : 'Msg Quota')}</div>
-                        <div>{t('enterprise.users.period', isChinese ? '周期' : 'Period')}</div>
-                        <div>{t('enterprise.users.agents', isChinese ? '数字员工' : 'Agents')}</div>
+                        <div>{t('userMgmt.source')}</div>
+                        <div>{t('enterprise.users.msgQuota')}</div>
+                        <div>{t('enterprise.users.period')}</div>
+                        <div>{t('enterprise.users.agents')}</div>
                         <div>{t('enterprise.users.ttl', 'TTL')}</div>
                         <div></div>
                     </div>
@@ -235,7 +235,7 @@ export default function UserManagement() {
                                         </span>
                                     ) : (
                                         <span style={{ fontSize: '10px', background: 'rgba(0,180,120,0.12)', color: 'var(--success)', borderRadius: '4px', padding: '2px 7px', whiteSpace: 'nowrap' }}>
-                                            {isChinese ? '注册' : 'Reg'}
+                                            {t('userMgmt.registered')}
                                         </span>
                                     )}
                                 </div>
@@ -272,7 +272,7 @@ export default function UserManagement() {
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
                                         <div className="form-group">
                                             <label className="form-label" style={{ fontSize: '11px' }}>
-                                                {t('enterprise.users.msgLimit', isChinese ? '消息限额' : 'Message Limit')}
+                                                {t('enterprise.users.msgLimit')}
                                             </label>
                                             <input
                                                 className="form-input"
@@ -283,7 +283,7 @@ export default function UserManagement() {
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label" style={{ fontSize: '11px' }}>
-                                                {t('enterprise.users.period', isChinese ? '重置周期' : 'Period')}
+                                                {t('enterprise.users.period')}
                                             </label>
                                             <select
                                                 className="form-input"
@@ -297,7 +297,7 @@ export default function UserManagement() {
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label" style={{ fontSize: '11px' }}>
-                                                {t('enterprise.users.maxAgents', isChinese ? '最多数字员工' : 'Max Agents')}
+                                                {t('enterprise.users.maxAgents')}
                                             </label>
                                             <input
                                                 className="form-input"
@@ -308,7 +308,7 @@ export default function UserManagement() {
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label" style={{ fontSize: '11px' }}>
-                                                {t('enterprise.users.agentTTL', isChinese ? '员工存活时长(h)' : 'Agent TTL (hours)')}
+                                                {t('enterprise.users.agentTTL')}
                                             </label>
                                             <input
                                                 className="form-input"
@@ -346,7 +346,7 @@ export default function UserManagement() {
                                 disabled={page <= 1}
                                 onClick={() => setPage(p => p - 1)}
                             >
-                                ‹ {isChinese ? '上一页' : 'Prev'}
+                                ‹ {t('userMgmt.prev')}
                             </button>
                             {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
                                 <button
@@ -364,7 +364,7 @@ export default function UserManagement() {
                                 disabled={page >= totalPages}
                                 onClick={() => setPage(p => p + 1)}
                             >
-                                {isChinese ? '下一页' : 'Next'} ›
+                                {t('userMgmt.next')} ›
                             </button>
                         </div>
                     )}
