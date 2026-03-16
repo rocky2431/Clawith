@@ -8,12 +8,12 @@ import hashlib
 import hmac
 import json
 import logging
-import time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
+from app.core.rate_limiter import check_rate_limit
 from app.database import async_session
 from app.models.trigger import AgentTrigger
 
@@ -21,10 +21,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
-# In-memory rate limiter: token -> list of timestamps
-_rate_hits: dict[str, list[float]] = {}
-RATE_LIMIT = 5       # max hits per minute per token
-MAX_PAYLOAD_SIZE = 65536  # 64KB max payload
+DEFAULT_RATE_LIMIT = 5       # max hits per minute per token
+MAX_PAYLOAD_SIZE = 65536     # 64KB max payload
 
 
 @router.post("/t/{token}")
@@ -35,21 +33,14 @@ async def receive_webhook(token: str, request: Request):
     Security is provided by:
     - Unique, unguessable URL token
     - Optional HMAC signature verification
-    - Rate limiting (5 requests/minute per token)
+    - Rate limiting (Redis-backed, per token)
     - Payload size limit (64KB)
     """
-    # Rate limiting — use per-agent limit if available
-    now = time.time()
-    hits = _rate_hits.get(token, [])
-    hits = [t for t in hits if now - t < 60]  # keep last 60 seconds
-
-    # We'll check per-agent rate limit after finding the trigger below.
-    # For now, apply a generous global ceiling to prevent memory abuse.
-    if len(hits) >= 60:  # hard ceiling: 60/min regardless of config
-        logger.warning(f"Webhook hard rate limit exceeded for token {token[:8]}...")
+    # Distributed rate limiting via Redis (replaces in-memory _rate_hits)
+    key = f"ratelimit:webhook:{token[:16]}"
+    if not await check_rate_limit(key, 60, 60):  # hard ceiling: 60/min
+        logger.warning("Webhook hard rate limit exceeded for token %s...", token[:8])
         return JSONResponse({"ok": True}, status_code=429)
-    hits.append(now)
-    _rate_hits[token] = hits
 
     # Payload size check
     body = await request.body()
@@ -79,15 +70,14 @@ async def receive_webhook(token: str, request: Request):
             # Return 200 OK to avoid leaking whether the token exists
             return JSONResponse({"ok": True})
 
-        # Per-agent rate limit check
+        # Per-agent rate limit check (Redis-backed)
         from app.models.agent import Agent
         agent_result = await db.execute(select(Agent).where(Agent.id == target.agent_id))
         agent_obj = agent_result.scalar_one_or_none()
-        agent_rate_limit = (agent_obj.webhook_rate_limit if agent_obj else None) or RATE_LIMIT
-        # Re-check hits against agent-specific limit (hits already collected above)
-        if len(hits) > agent_rate_limit:  # > because we already appended current hit
-            logger.warning(f"Webhook per-agent rate limit ({agent_rate_limit}/min) for token {token[:8]}...")
-            # Log audit entry so user can see dropped webhooks
+        agent_rate_limit = (agent_obj.webhook_rate_limit if agent_obj else None) or DEFAULT_RATE_LIMIT
+        agent_key = f"ratelimit:webhook_agent:{target.agent_id}"
+        if not await check_rate_limit(agent_key, agent_rate_limit, 60):
+            logger.warning("Webhook per-agent rate limit (%d/min) for token %s...", agent_rate_limit, token[:8])
             try:
                 from app.models.audit import AuditLog
                 db.add(AuditLog(
@@ -100,8 +90,8 @@ async def receive_webhook(token: str, request: Request):
                     },
                 ))
                 await db.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("Failed to log webhook rate limit audit: %s", e)
             return JSONResponse({"ok": True}, status_code=429)
 
         cfg = target.config or {}
