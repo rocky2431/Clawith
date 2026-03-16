@@ -39,6 +39,8 @@ export default function AgentCreate() {
         discord_bot_token: '',
         discord_public_key: '',
         skill_ids: [] as string[],
+        agent_class: 'internal_tenant',
+        security_zone: 'standard',
     });
     const [feishuOpen, setFeishuOpen] = useState(false);
     const [slackOpen, setSlackOpen] = useState(false);
@@ -644,6 +646,54 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                 </div>
                             </div>
                         )}
+
+                        {/* Agent Classification */}
+                        <div style={{ marginTop: '20px' }}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
+                                {t('agent.class.title', 'Agent Type')}
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {(['internal_tenant', 'external_gateway', 'external_api'] as const).map((cls) => (
+                                    <label key={cls} style={{
+                                        flex: 1, minWidth: '140px', display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
+                                        background: (form as any).agent_class === cls ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                                        border: `1px solid ${(form as any).agent_class === cls ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                        borderRadius: '8px', cursor: 'pointer',
+                                    }}>
+                                        <input type="radio" name="agent_class" checked={(form as any).agent_class === cls}
+                                            onChange={() => setForm({ ...form, agent_class: cls } as any)} style={{ marginTop: '2px' }} />
+                                        <div>
+                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{t(`agent.class.${cls}`, cls)}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t(`agent.class.${cls}_desc`, '')}</div>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Security Zone */}
+                        <div style={{ marginTop: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
+                                {t('agent.zone.title', 'Security Zone')}
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {(['standard', 'restricted', 'public'] as const).map((zone) => (
+                                    <label key={zone} style={{
+                                        flex: 1, display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
+                                        background: (form as any).security_zone === zone ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                                        border: `1px solid ${(form as any).security_zone === zone ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                        borderRadius: '8px', cursor: 'pointer',
+                                    }}>
+                                        <input type="radio" name="security_zone" checked={(form as any).security_zone === zone}
+                                            onChange={() => setForm({ ...form, security_zone: zone } as any)} style={{ marginTop: '2px' }} />
+                                        <div>
+                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{t(`agent.zone.${zone}`, zone)}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t(`agent.zone.${zone}_desc`, '')}</div>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
 

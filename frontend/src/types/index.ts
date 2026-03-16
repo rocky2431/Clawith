@@ -37,6 +37,8 @@ export interface Agent {
     timezone?: string;
     context_window_size?: number;
     agent_type?: 'native' | 'openclaw';
+    agent_class?: 'internal_system' | 'internal_tenant' | 'external_gateway' | 'external_api';
+    security_zone?: 'standard' | 'restricted' | 'public';
     openclaw_last_seen?: string;
     created_at: string;
     last_active_at?: string;

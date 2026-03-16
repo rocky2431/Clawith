@@ -349,6 +349,26 @@
       "success": "上传成功",
       "failed": "上传失败",
       "uploading": "上传中..."
+    },
+    "class": {
+      "title": "员工类型",
+      "internal_system": "系统员工",
+      "internal_system_desc": "平台运维员工（监控、自动化）",
+      "internal_tenant": "内部员工",
+      "internal_tenant_desc": "使用平台模型池的租户创建员工",
+      "external_gateway": "网关员工",
+      "external_gateway_desc": "通过 OpenClaw 网关连接的远程机器人",
+      "external_api": "API 员工",
+      "external_api_desc": "仅通过 API 访问的无状态员工"
+    },
+    "zone": {
+      "title": "安全区域",
+      "standard": "标准",
+      "standard_desc": "正常访问组织资源",
+      "restricted": "受限",
+      "restricted_desc": "所有操作需审批（涉及 PII/财务数据）",
+      "public": "公开",
+      "public_desc": "面向客户，仅限沙箱工具"
     }
   },
   "wizard": {

@@ -349,6 +349,26 @@
       "success": "Upload successful",
       "failed": "Upload failed",
       "uploading": "Uploading..."
+    },
+    "class": {
+      "title": "Agent Type",
+      "internal_system": "System Agent",
+      "internal_system_desc": "Platform-operated agent (monitoring, automation)",
+      "internal_tenant": "Internal Agent",
+      "internal_tenant_desc": "Tenant-created agent using platform LLM pool",
+      "external_gateway": "Gateway Agent",
+      "external_gateway_desc": "Remote bot via OpenClaw gateway",
+      "external_api": "API Agent",
+      "external_api_desc": "Stateless agent accessed via API only"
+    },
+    "zone": {
+      "title": "Security Zone",
+      "standard": "Standard",
+      "standard_desc": "Normal access to org resources",
+      "restricted": "Restricted",
+      "restricted_desc": "All actions require approval (PII/financial data)",
+      "public": "Public",
+      "public_desc": "Customer-facing, sandboxed tools only"
     }
   },
   "wizard": {
