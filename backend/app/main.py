@@ -269,6 +269,7 @@ from app.api.notification import router as notification_router
 from app.api.gateway import router as gateway_router
 from app.api.config_history import router as config_history_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.admin import router as admin_router
 
 # All API routers — mounted under both /api (backward compat) and /api/v1
 _api_routers = [
@@ -278,7 +279,7 @@ _api_routers = [
     schedules_router, tools_router, files_upload_router, enterprise_kb_router,
     skills_router, users_router, slack_router, discord_router, dingtalk_router,
     wecom_router, teams_router, atlassian_router, notification_router,
-    gateway_router, config_history_router, feature_flags_router,
+    gateway_router, config_history_router, feature_flags_router, admin_router,
 ]
 
 for _r in _api_routers:
@@ -291,6 +292,8 @@ app.include_router(chat_sessions_router)
 app.include_router(plaza_router)
 app.include_router(webhooks_router)  # Public endpoint, no API prefix
 app.include_router(ws_router)
+app.include_router(gateway_router, prefix=settings.API_PREFIX)
+app.include_router(admin_router, prefix=settings.API_PREFIX)
 
 
 # Health check — unversioned (infrastructure)

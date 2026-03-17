@@ -7,6 +7,7 @@ import FileBrowser from '../components/FileBrowser';
 import type { FileBrowserApi } from '../components/FileBrowser';
 import { saveAccentColor, getSavedAccentColor, resetAccentColor, PRESET_COLORS } from '../utils/theme';
 import UserManagement from './UserManagement';
+import InvitationCodes from './InvitationCodes';
 
 // API helpers for enterprise endpoints
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -25,8 +26,34 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 
 interface LLMModel {
     id: string; provider: string; model: string; label: string;
-    base_url?: string; max_tokens_per_day?: number; enabled: boolean; supports_vision?: boolean; max_output_tokens?: number; created_at: string;
+    base_url?: string; api_key_masked?: string; max_tokens_per_day?: number; enabled: boolean; supports_vision?: boolean; max_output_tokens?: number; created_at: string;
 }
+
+interface LLMProviderSpec {
+    provider: string;
+    display_name: string;
+    protocol: string;
+    default_base_url?: string | null;
+    supports_tool_choice: boolean;
+    default_max_tokens: number;
+}
+
+const FALLBACK_LLM_PROVIDERS: LLMProviderSpec[] = [
+    { provider: 'anthropic', display_name: 'Anthropic', protocol: 'anthropic', default_base_url: 'https://api.anthropic.com', supports_tool_choice: false, default_max_tokens: 8192 },
+    { provider: 'openai', display_name: 'OpenAI', protocol: 'openai_compatible', default_base_url: 'https://api.openai.com/v1', supports_tool_choice: true, default_max_tokens: 16384 },
+    { provider: 'azure', display_name: 'Azure OpenAI', protocol: 'openai_compatible', default_base_url: '', supports_tool_choice: true, default_max_tokens: 16384 },
+    { provider: 'deepseek', display_name: 'DeepSeek', protocol: 'openai_compatible', default_base_url: 'https://api.deepseek.com/v1', supports_tool_choice: true, default_max_tokens: 8192 },
+    { provider: 'minimax', display_name: 'MiniMax', protocol: 'openai_compatible', default_base_url: 'https://api.minimaxi.com/v1', supports_tool_choice: true, default_max_tokens: 16384 },
+    { provider: 'qwen', display_name: 'Qwen (DashScope)', protocol: 'openai_compatible', default_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', supports_tool_choice: true, default_max_tokens: 8192 },
+    { provider: 'zhipu', display_name: 'Zhipu', protocol: 'openai_compatible', default_base_url: 'https://open.bigmodel.cn/api/paas/v4', supports_tool_choice: true, default_max_tokens: 8192 },
+    { provider: 'gemini', display_name: 'Gemini', protocol: 'gemini', default_base_url: 'https://generativelanguage.googleapis.com/v1beta', supports_tool_choice: true, default_max_tokens: 8192 },
+    { provider: 'openrouter', display_name: 'OpenRouter', protocol: 'openai_compatible', default_base_url: 'https://openrouter.ai/api/v1', supports_tool_choice: true, default_max_tokens: 4096 },
+    { provider: 'kimi', display_name: 'Kimi (Moonshot)', protocol: 'openai_compatible', default_base_url: 'https://api.moonshot.cn/v1', supports_tool_choice: true, default_max_tokens: 8192 },
+    { provider: 'vllm', display_name: 'vLLM', protocol: 'openai_compatible', default_base_url: 'http://localhost:8000/v1', supports_tool_choice: true, default_max_tokens: 4096 },
+    { provider: 'ollama', display_name: 'Ollama', protocol: 'openai_compatible', default_base_url: 'http://localhost:11434/v1', supports_tool_choice: true, default_max_tokens: 4096 },
+    { provider: 'sglang', display_name: 'SGLang', protocol: 'openai_compatible', default_base_url: 'http://localhost:30000/v1', supports_tool_choice: true, default_max_tokens: 4096 },
+    { provider: 'custom', display_name: 'Custom', protocol: 'openai_compatible', default_base_url: '', supports_tool_choice: true, default_max_tokens: 4096 },
+];
 
 
 
@@ -358,13 +385,6 @@ function SkillsTab() {
     );
 }
 
-// ─── Notification Bar Config ───────────────────────
-function NotificationBarConfig() {
-    const { t } = useTranslation();
-    const [enabled, setEnabled] = useState(false);
-    const [text, setText] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
 
     useEffect(() => {
         fetchJson<any>('/enterprise/system-settings/notification_bar')
@@ -709,7 +729,7 @@ function FeatureFlagsTab() {
 export default function EnterpriseSettings() {
     const { t } = useTranslation();
     const qc = useQueryClient();
-    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'skills' | 'quotas' | 'users' | 'flags'>('info');
+    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites'>('info');
 
     // OpenViking status for KB tab
     const { data: vikingStatus } = useQuery({
@@ -759,17 +779,28 @@ export default function EnterpriseSettings() {
     const [companyIntroSaving, setCompanyIntroSaving] = useState(false);
     const [companyIntroSaved, setCompanyIntroSaved] = useState(false);
 
-    // Load Company Intro
+    // Company intro key: always per-tenant scoped
+    const companyIntroKey = selectedTenantId ? `company_intro_${selectedTenantId}` : 'company_intro';
+
+    // Load Company Intro (tenant-scoped only, no fallback to global)
     useEffect(() => {
-        fetchJson<any>('/enterprise/system-settings/company_intro')
-            .then(d => { if (d?.value?.content) setCompanyIntro(d.value.content); })
+        setCompanyIntro('');
+        if (!selectedTenantId) return;
+        const tenantKey = `company_intro_${selectedTenantId}`;
+        fetchJson<any>(`/enterprise/system-settings/${tenantKey}`)
+            .then(d => {
+                if (d?.value?.content) {
+                    setCompanyIntro(d.value.content);
+                }
+                // No fallback — each company starts empty with placeholder watermark
+            })
             .catch(() => { });
-    }, []);
+    }, [selectedTenantId]);
 
     const saveCompanyIntro = async () => {
         setCompanyIntroSaving(true);
         try {
-            await fetchJson('/enterprise/system-settings/company_intro', {
+            await fetchJson(`/enterprise/system-settings/${companyIntroKey}`, {
                 method: 'PUT', body: JSON.stringify({ value: { content: companyIntro } }),
             });
             setCompanyIntroSaved(true);
@@ -864,6 +895,12 @@ export default function EnterpriseSettings() {
     const [showAddModel, setShowAddModel] = useState(false);
     const [editingModelId, setEditingModelId] = useState<string | null>(null);
     const [modelForm, setModelForm] = useState({ provider: 'anthropic', model: '', api_key: '', base_url: '', label: '', supports_vision: false, max_output_tokens: '' as string });
+    const { data: providerSpecs = [] } = useQuery({
+        queryKey: ['llm-provider-specs'],
+        queryFn: () => fetchJson<LLMProviderSpec[]>('/enterprise/llm-providers'),
+        enabled: activeTab === 'llm',
+    });
+    const providerOptions = providerSpecs.length > 0 ? providerSpecs : FALLBACK_LLM_PROVIDERS;
     const addModel = useMutation({
         mutationFn: (data: any) => fetchJson(`/enterprise/llm-models${selectedTenantId ? `?tenant_id=${selectedTenantId}` : ''}`, { method: 'POST', body: JSON.stringify(data) }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['llm-models', selectedTenantId] }); setShowAddModel(false); setEditingModelId(null); },
@@ -940,9 +977,9 @@ export default function EnterpriseSettings() {
                 </div>
 
                 <div className="tabs">
-                    {(['info', 'llm', 'tools', 'skills', 'quotas', 'users', 'org', 'approvals', 'audit', 'flags'] as const).map(tab => (
+                    {(['info', 'llm', 'tools', 'skills', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'flags'] as const).map(tab => (
                         <div key={tab} className={`tab ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>
-                            {t(`enterprise.tabs.${tab}`, tab)}
+                            {tab === 'quotas' ? t('enterprise.tabs.quotas', 'Quotas') : tab === 'users' ? t('enterprise.tabs.users', 'Users') : tab === 'invites' ? t('enterprise.tabs.invites', 'Invitations') : t(`enterprise.tabs.${tab}`, tab)}
                         </div>
                     ))}
                 </div>
@@ -951,7 +988,18 @@ export default function EnterpriseSettings() {
                 {activeTab === 'llm' && (
                     <div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-                            <button className="btn btn-primary" onClick={() => { setEditingModelId(null); setModelForm({ provider: 'anthropic', model: '', api_key: '', base_url: '', label: '', supports_vision: false, max_output_tokens: '' }); setShowAddModel(true); }}>+ {t('enterprise.llm.addModel')}</button>
+                            <button className="btn btn-primary" onClick={() => {
+                                setEditingModelId(null);
+                                const defaultSpec = providerOptions[0];
+                                setModelForm({
+                                    provider: defaultSpec?.provider || 'anthropic',
+                                    model: '', api_key: '',
+                                    base_url: defaultSpec?.default_base_url || '',
+                                    label: '', supports_vision: false,
+                                    max_output_tokens: defaultSpec ? String(defaultSpec.default_max_tokens) : '4096',
+                                });
+                                setShowAddModel(true);
+                            }}>+ {t('enterprise.llm.addModel')}</button>
                         </div>
 
                         {showAddModel && (
@@ -960,15 +1008,28 @@ export default function EnterpriseSettings() {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div className="form-group">
                                         <label className="form-label">Provider</label>
-                                        <select className="form-input" value={modelForm.provider} onChange={e => setModelForm({ ...modelForm, provider: e.target.value })}>
-                                            <option value="anthropic">Anthropic</option>
-                                            <option value="openai">OpenAI</option>
-                                            <option value="deepseek">DeepSeek</option>
-                                            <option value="minimax">MiniMax</option>
-                                            <option value="qwen">Qwen (DashScope)</option>
-                                            <option value="zhipu">Zhipu</option>
-                                            <option value="openrouter">OpenRouter</option>
-                                            <option value="custom">Custom</option>
+                                        <select className="form-input" value={modelForm.provider} onChange={e => {
+                                            const newProvider = e.target.value;
+                                            const spec = providerOptions.find(p => p.provider === newProvider);
+                                            const updates: any = { provider: newProvider };
+                                            // Auto-fill base_url when adding new model (not editing)
+                                            if (!editingModelId && spec?.default_base_url) {
+                                                updates.base_url = spec.default_base_url;
+                                            } else if (!editingModelId) {
+                                                updates.base_url = '';
+                                            }
+                                            // Auto-fill max_output_tokens with provider default
+                                            if (!editingModelId && spec) {
+                                                updates.max_output_tokens = String(spec.default_max_tokens);
+                                            }
+                                            setModelForm(f => ({ ...f, ...updates }));
+                                        }}>
+                                            {providerOptions.map((p) => (
+                                                <option key={p.provider} value={p.provider}>{p.display_name}</option>
+                                            ))}
+                                            {!providerOptions.some((p) => p.provider === modelForm.provider) && (
+                                                <option value={modelForm.provider}>{modelForm.provider}</option>
+                                            )}
                                         </select>
                                     </div>
                                     <div className="form-group">
@@ -996,12 +1057,39 @@ export default function EnterpriseSettings() {
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Max Output Tokens</label>
-                                        <input className="form-input" type="number" placeholder="Auto (provider default)" value={modelForm.max_output_tokens} onChange={e => setModelForm({ ...modelForm, max_output_tokens: e.target.value })} />
-                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Override the default output token limit. Leave empty to use provider default (4096).</div>
+                                        <input className="form-input" type="number" placeholder={`Provider default`} value={modelForm.max_output_tokens} onChange={e => setModelForm({ ...modelForm, max_output_tokens: e.target.value })} />
+                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Override the default output token limit. Auto-filled from provider; adjust as needed.</div>
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
                                     <button className="btn btn-secondary" onClick={() => { setShowAddModel(false); setEditingModelId(null); }}>{t('common.cancel')}</button>
+                                    <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} disabled={!modelForm.model || (!editingModelId && !modelForm.api_key)} onClick={async () => {
+                                        const btn = document.activeElement as HTMLButtonElement;
+                                        const origText = btn?.textContent || '';
+                                        if (btn) btn.textContent = 'Testing...';
+                                        try {
+                                            const token = localStorage.getItem('token');
+                                            const testData: any = { provider: modelForm.provider, model: modelForm.model, base_url: modelForm.base_url || undefined };
+                                            if (modelForm.api_key) testData.api_key = modelForm.api_key;
+                                            if (editingModelId) testData.model_id = editingModelId;
+                                            const res = await fetch('/api/enterprise/llm-test', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                                body: JSON.stringify(testData),
+                                            });
+                                            const result = await res.json();
+                                            if (result.success) {
+                                                if (btn) { btn.textContent = `OK (${result.latency_ms}ms)`; btn.style.color = 'var(--success)'; }
+                                                setTimeout(() => { if (btn) { btn.textContent = origText; btn.style.color = ''; } }, 3000);
+                                            } else {
+                                                alert(`Test failed: ${result.error || 'Unknown error'}\n\nLatency: ${result.latency_ms}ms`);
+                                                if (btn) btn.textContent = origText;
+                                            }
+                                        } catch (e: any) {
+                                            alert(`Test error: ${e.message}`);
+                                            if (btn) btn.textContent = origText;
+                                        }
+                                    }}>Test</button>
                                     <button className="btn btn-primary" onClick={() => {
                                         if (editingModelId) {
                                             const data = { ...modelForm, max_output_tokens: modelForm.max_output_tokens ? Number(modelForm.max_output_tokens) : null };
@@ -1034,7 +1122,7 @@ export default function EnterpriseSettings() {
                                         {m.supports_vision && <span className="badge" style={{ background: 'rgba(99,102,241,0.15)', color: 'rgb(99,102,241)', fontSize: '10px' }}>👁 Vision</span>}
                                         <button className="btn btn-ghost" onClick={() => {
                                             setEditingModelId(m.id);
-                                            setModelForm({ provider: m.provider, model: m.model, label: m.label, base_url: m.base_url || '', api_key: '', supports_vision: m.supports_vision || false, max_output_tokens: m.max_output_tokens ? String(m.max_output_tokens) : '' });
+                                            setModelForm({ provider: m.provider, model: m.model, label: m.label, base_url: m.base_url || '', api_key: m.api_key_masked || '', supports_vision: m.supports_vision || false, max_output_tokens: m.max_output_tokens ? String(m.max_output_tokens) : '' });
                                             setShowAddModel(true);
                                         }} style={{ fontSize: '12px' }}>✏️ Edit</button>
                                         <button className="btn btn-ghost" onClick={() => deleteModel.mutate({ id: m.id })} style={{ color: 'var(--error)' }}>{t('common.delete')}</button>
@@ -1136,8 +1224,6 @@ export default function EnterpriseSettings() {
                 {/* ── Company Management ── */}
                 {activeTab === 'info' && (
                     <div>
-                        {/* ── Notification Bar Config ── */}
-                        <NotificationBarConfig />
 
                         {/* ── 0. Company Name ── */}
                         <h3 style={{ marginBottom: '8px' }}>{t('enterprise.companyName.title', 'Company Name')}</h3>
@@ -1156,7 +1242,7 @@ export default function EnterpriseSettings() {
                                 className="form-input"
                                 value={companyIntro}
                                 onChange={e => setCompanyIntro(e.target.value)}
-                                placeholder={`# Company Name\n\n## About Us\nDescribe your company here...\n\n## Products & Services\n- Product A\n- Product B\n\n## Culture & Values\n- Value 1\n- Value 2`}
+                                placeholder={`# Company Name\nClawith\n\n# About\nOpenClaw\uD83E\uDD9E For Teams\nOpen Source \u00B7 Multi-OpenClaw Collaboration\n\nOpenClaw empowers individuals.\nClawith scales it to frontier organizations.`}
                                 style={{
                                     minHeight: '200px', resize: 'vertical',
                                     fontFamily: 'var(--font-mono)', fontSize: '13px',
@@ -1625,6 +1711,9 @@ export default function EnterpriseSettings() {
                 {activeTab === 'skills' && <SkillsTab />}
 
                 {activeTab === 'flags' && <FeatureFlagsTab />}
+
+                {/* ── Invitation Codes Tab ── */}
+                {activeTab === 'invites' && <InvitationCodes />}
             </div>
 
             {
