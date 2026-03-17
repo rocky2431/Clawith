@@ -359,6 +359,40 @@
         "notConfigured": "未配置",
         "saveChannel": "保存配置"
       },
+      "perm": {
+        "title": "访问权限",
+        "description": "控制谁可以查看和使用此数字员工。仅创建者或管理员可更改此设置。",
+        "company": "全公司",
+        "companyDesc": "组织内所有用户均可使用",
+        "selfOnly": "仅自己",
+        "selfDesc": "仅创建者可使用",
+        "accessLevel": "默认访问级别",
+        "useLevel": "使用",
+        "useDesc": "任务、对话、工具、技能、工作区",
+        "manageLevel": "管理",
+        "manageDesc": "完全访问，包括设置、心智、关系",
+        "currentAccess": "当前访问",
+        "readOnly": "仅创建者或管理员可更改权限"
+      },
+      "timezone": {
+        "title": "\ud83c\udf10 时区",
+        "description": "用于此数字员工调度、活跃时段和时间感知的时区。未设置时使用公司默认时区。",
+        "current": "员工时区",
+        "override": "此员工使用自定义时区",
+        "inherited": "使用公司默认时区",
+        "default": "\u21a9 公司默认"
+      },
+      "heartbeat": {
+        "title": "心跳",
+        "description": "定期感知检查——数字员工主动监控广场和工作环境。",
+        "enabled": "启用心跳",
+        "enabledDesc": "数字员工将定期检查广场和工作状态",
+        "interval": "检查间隔",
+        "intervalDesc": "检查更新的频率",
+        "activeHours": "活跃时段",
+        "activeHoursDesc": "仅在此时段内触发心跳（HH:MM-HH:MM）",
+        "lastRun": "上次心跳"
+      },
       "danger": {
         "title": "危险操作",
         "deleteAgent": "删除数字员工",
@@ -519,7 +553,11 @@
     "placeholder": "输入消息...",
     "send": "发送",
     "deleteSession": "删除会话",
-    "deleteConfirm": "确定删除这个会话及其所有消息？此操作无法撤销。"
+    "deleteConfirm": "确定删除这个会话及其所有消息？此操作无法撤销。",
+    "analyzeImage": "请分析这张图片",
+    "imageLabel": "[图片]",
+    "fileLabel": "[文件:",
+    "userQuestion": "用户问题:"
   },
   "messages": {
     "title": "消息中心",
@@ -741,13 +779,16 @@
     "none": "无",
     "download": "下载",
     "default": "默认",
+    "admin": "管理员",
+    "minutes": "分钟",
     "channels": {
       "feishu": "飞书",
       "discord": "Discord",
       "slack": "Slack",
       "teams": "Microsoft Teams",
       "dingtalk": "钉钉",
-      "wecom": "企业微信"
+      "wecom": "企业微信",
+      "atlassian": "Atlassian"
     }
   },
   "toolCategory": {
@@ -808,7 +849,13 @@
     "source": "来源",
     "registered": "注册",
     "prev": "上一页",
-    "next": "下一页"
+    "next": "下一页",
+    "period": {
+      "permanent": "永久",
+      "daily": "每天",
+      "weekly": "每周",
+      "monthly": "每月"
+    }
   },
   "plaza": {
     "title": "Agent 广场",
@@ -875,7 +922,9 @@
     "createDesc": "创建你自己的公司并开始使用",
     "namePlaceholder": "公司名称",
     "create": "创建",
-    "hint": "你可以随时从企业设置中邀请成员加入。"
+    "hint": "你可以随时从企业设置中邀请成员加入。",
+    "joinFailed": "加入公司失败",
+    "createFailed": "创建公司失败"
   },
   "openclaw": {
     "nativeTitle": "平台托管",
@@ -888,6 +937,73 @@
     "setupInstructionDesc": "复制并发送给您的 OpenClaw Agent，它将自动完成配置。",
     "keyNote": "API Key 已嵌入在上方指令中。如需手动配置可单独保存。",
     "goToAgent": "前往 Agent 页面"
+  },
+  "errorBoundary": {
+    "title": "哎呀，出错了。",
+    "description": "发生了意外错误。你可以尝试刷新页面，或在问题持续时联系技术支持。",
+    "errorDetails": "错误详情",
+    "refreshPage": "刷新页面"
+  },
+  "channel": {
+    "description": "为此数字员工配置通信渠道",
+    "syncHint": "配置飞书机器人前，请先在公司设置 → 组织架构中同步组织架构，以确保机器人能识别消息发送者。",
+    "connectionMode": "连接模式",
+    "websocketRecommended": "WebSocket（推荐）",
+    "webhook": "Webhook",
+    "websocketMode": "WebSocket 模式",
+    "webhookMode": "Webhook 模式",
+    "modeLabel": "模式",
+    "optional": "可选",
+    "configured": "已配置",
+    "notConfigured": "未配置",
+    "connectedWebsocket": "已通过 WebSocket 连接（无需回调地址）",
+    "noPermission": "仅创建者或管理员可配置通信渠道。",
+    "configureInSettings": "在设置中配置",
+    "edit": "编辑",
+    "disconnect": "断开连接",
+    "saveChanges": "保存更改",
+    "testing": "测试中...",
+    "testConnection": "测试连接",
+    "status": "状态",
+    "streamModeActive": "Stream 模式已激活，无需 Webhook 地址。",
+    "discordHint": "使用 /ask message:<你的问题> 与此 Agent 对话",
+    "slackDesc": "Slack 机器人",
+    "discordDesc": "斜杠命令 (/ask)",
+    "teamsDesc": "Teams 机器人",
+    "feishuDesc": "飞书 / Lark",
+    "wecomDesc": "WebSocket / Webhook",
+    "dingtalkDesc": "Stream 模式",
+    "atlassianDesc": "Jira / Confluence / Compass (Rovo MCP)",
+    "botToken": "机器人令牌",
+    "signingSecret": "签名密钥",
+    "applicationId": "应用 ID",
+    "publicKey": "公钥",
+    "appId": "应用 ID",
+    "appIdClientId": "应用 ID（客户端 ID）",
+    "appSecret": "应用密钥",
+    "appSecretClientSecret": "应用密钥（客户端密钥）",
+    "appSecretLabel": "AppSecret",
+    "appKey": "AppKey",
+    "encryptKey": "加密密钥",
+    "webhookUrl": "Webhook 地址",
+    "webhookUrlEventSub": "Webhook URL（事件订阅地址）",
+    "interactionsEndpointUrl": "交互端点 URL",
+    "messagingEndpointUrl": "消息端点 URL",
+    "corpId": "企业 ID",
+    "agentId": "应用 ID",
+    "secret": "密钥",
+    "token": "令牌",
+    "encodingAesKey": "EncodingAESKey",
+    "botId": "机器人 ID",
+    "botSecret": "机器人密钥",
+    "apiKey": "API 密钥",
+    "cloudId": "Cloud ID",
+    "atlassianConfigured": "API 密钥已配置 — Jira / Confluence / Compass 工具可用",
+    "atlassianConnected": "已连接 — {{count}} 个工具可用",
+    "atlassianApiKeyHint": "服务账号密钥以 ATSTT 开头。个人 API 令牌：将 email:token 进行 base64 编码后加上 Basic 前缀",
+    "atlassianCloudIdHint": "多站点部署必填。访问 your-site.atlassian.net/_edge/tenant_info 获取",
+    "saveConfig": "保存配置",
+    "copy": "复制"
   },
   "channelGuide": {
     "setupGuide": "配置说明",
@@ -970,6 +1086,14 @@
       "ws_step5": "复制生成的 Bot ID 和 Secret → 填入上方 → 点击保存配置",
       "ws_step6": "在企业微信中找到机器人，发送消息测试",
       "ws_note": "WebSocket 长连接模式无需公网 IP、回调地址或域名备案（ICP），连接由系统自动管理。"
+    },
+    "atlassian": {
+      "step1": "打开 id.atlassian.com/manage-profile/security/api-tokens → 点击创建 API 令牌 → 输入标签 → 复制令牌",
+      "step2": "服务账号（推荐）：打开 admin.atlassian.com → 设置 → API 密钥 → 创建 API 密钥，密钥以 ATSTT 开头",
+      "step3": "获取 Cloud ID：打开 your-site.atlassian.net/_edge/tenant_info → 复制 cloudId 值",
+      "step4": "将 API 密钥（和可选的 Cloud ID）填入上方 → 点击保存配置",
+      "step5": "点击测试连接，验证 API 密钥是否有效并发现可用工具",
+      "note": "API 令牌继承创建者的权限。生产环境建议使用服务账号密钥。"
     }
   }
 }

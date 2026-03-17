@@ -291,22 +291,22 @@ export default function Chat() {
                 const imageMarker = `[image_data:${attachedFile.imageUrl}]`;
                 contentForLLM = userMsg
                     ? `${imageMarker}\n${userMsg}`
-                    : `${imageMarker}\n请分析这张图片`;
-                userMsg = userMsg || `[图片] ${attachedFile.name}`;
+                    : `${imageMarker}\n${t('chat.analyzeImage')}`;
+                userMsg = userMsg || `${t('chat.imageLabel')} ${attachedFile.name}`;
             } else if (attachedFile.imageUrl) {
                 // Non-vision model — just reference the file path
                 const wsPath = attachedFile.path || '';
                 contentForLLM = userMsg
                     ? `[图片文件已上传: ${attachedFile.name}，保存在 ${wsPath}]\n\n${userMsg}`
                     : `[图片文件已上传: ${attachedFile.name}，保存在 ${wsPath}]\n请描述或处理这个图片文件。你可以使用 read_document 工具读取它。`;
-                userMsg = userMsg || `[图片] ${attachedFile.name}`;
+                userMsg = userMsg || `${t('chat.imageLabel')} ${attachedFile.name}`;
             } else {
                 const wsPath = attachedFile.path || '';
                 const codePath = wsPath.replace(/^workspace\//, '');
                 const fileLoc = wsPath ? `\nFile location: ${wsPath} (for read_file/read_document tools)\nIn execute_code, use relative path: "${codePath}" (working directory is workspace/)` : '';
-                const fileContext = `[文件: ${attachedFile.name}]${fileLoc}\n\n${attachedFile.text}`;
+                const fileContext = `${t('chat.fileLabel')} ${attachedFile.name}]${fileLoc}\n\n${attachedFile.text}`;
                 contentForLLM = userMsg
-                    ? `${fileContext}\n\n用户问题: ${userMsg}`
+                    ? `${fileContext}\n\n${t('chat.userQuestion')} ${userMsg}`
                     : `请阅读并分析以下文件内容:\n\n${fileContext}`;
                 userMsg = userMsg || `[${t('agent.chat.attachment')}] ${attachedFile.name}`;
             }

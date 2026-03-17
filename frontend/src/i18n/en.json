@@ -352,6 +352,40 @@
         "notConfigured": "Not configured",
         "saveChannel": "Save Config"
       },
+      "perm": {
+        "title": "Access Permissions",
+        "description": "Control who can see and interact with this agent. Only the creator or admin can change this.",
+        "company": "Company-wide",
+        "companyDesc": "All users in the organization can use this agent",
+        "selfOnly": "Only Me",
+        "selfDesc": "Only the creator can use this agent",
+        "accessLevel": "Default Access Level",
+        "useLevel": "Use",
+        "useDesc": "Task, Chat, Tools, Skills, Workspace",
+        "manageLevel": "Manage",
+        "manageDesc": "Full access including Settings, Mind, Relationships",
+        "currentAccess": "Current access",
+        "readOnly": "Only the creator or admin can change permissions"
+      },
+      "timezone": {
+        "title": "\ud83c\udf10 Timezone",
+        "description": "The timezone used for this agent's scheduling, active hours, and time awareness. Defaults to the company timezone if not set.",
+        "current": "Agent Timezone",
+        "override": "Custom timezone for this agent",
+        "inherited": "Using company default timezone",
+        "default": "\u21a9 Company default"
+      },
+      "heartbeat": {
+        "title": "Heartbeat",
+        "description": "Periodic awareness check \u2014 agent proactively monitors the plaza and work environment.",
+        "enabled": "Enable Heartbeat",
+        "enabledDesc": "Agent will periodically check plaza and work status",
+        "interval": "Check Interval",
+        "intervalDesc": "How often the agent checks for updates",
+        "activeHours": "Active Hours",
+        "activeHoursDesc": "Only trigger heartbeat during these hours (HH:MM-HH:MM)",
+        "lastRun": "Last heartbeat"
+      },
       "danger": {
         "title": "Danger Zone",
         "deleteAgent": "Delete Digital Employee",
@@ -507,7 +541,11 @@
     "placeholder": "Type a message...",
     "send": "Send",
     "deleteSession": "Delete session",
-    "deleteConfirm": "Delete this session and all its messages? This cannot be undone."
+    "deleteConfirm": "Delete this session and all its messages? This cannot be undone.",
+    "analyzeImage": "Please analyze this image",
+    "imageLabel": "[Image]",
+    "fileLabel": "[File:",
+    "userQuestion": "User question:"
   },
   "messages": {
     "title": "Messages",
@@ -668,13 +706,16 @@
     "none": "None",
     "download": "Download",
     "default": "Default",
+    "admin": "Admin",
+    "minutes": "min",
     "channels": {
       "feishu": "Feishu",
       "discord": "Discord",
       "slack": "Slack",
       "teams": "Microsoft Teams",
       "dingtalk": "DingTalk",
-      "wecom": "WeCom"
+      "wecom": "WeCom",
+      "atlassian": "Atlassian"
     }
   },
   "toolCategory": {
@@ -735,7 +776,13 @@
     "source": "Source",
     "registered": "Reg",
     "prev": "Prev",
-    "next": "Next"
+    "next": "Next",
+    "period": {
+      "permanent": "Permanent",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly"
+    }
   },
   "openclaw": {
     "created": "OpenClaw Agent Created",
@@ -744,6 +791,73 @@
     "setupInstructionDesc": "Copy and send this to your OpenClaw agent. It will configure itself automatically.",
     "keyNote": "This key is already embedded in the instruction above. Save it separately if needed for manual configuration.",
     "goToAgent": "Go to Agent Page"
+  },
+  "errorBoundary": {
+    "title": "Oops, something went wrong.",
+    "description": "An unexpected error occurred. You can try refreshing the page or contact support if the problem persists.",
+    "errorDetails": "Error Details",
+    "refreshPage": "Refresh Page"
+  },
+  "channel": {
+    "description": "Configure communication channels for this agent",
+    "syncHint": "Before configuring the Feishu bot, please sync your organization structure in Enterprise Settings → Org Structure first. This ensures the bot can identify message senders.",
+    "connectionMode": "Connection Mode",
+    "websocketRecommended": "WebSocket (Recommended)",
+    "webhook": "Webhook",
+    "websocketMode": "WebSocket Mode",
+    "webhookMode": "Webhook Mode",
+    "modeLabel": "Mode",
+    "optional": "Optional",
+    "configured": "Configured",
+    "notConfigured": "Not configured",
+    "connectedWebsocket": "Connected via WebSocket (No callback URL needed)",
+    "noPermission": "Only the creator or admin can configure communication channels.",
+    "configureInSettings": "Configure in Settings",
+    "edit": "Edit",
+    "disconnect": "Disconnect",
+    "saveChanges": "Save Changes",
+    "testing": "Testing...",
+    "testConnection": "Test Connection",
+    "status": "Status",
+    "streamModeActive": "Stream mode active. No webhook URL needed.",
+    "discordHint": "Use /ask message:<your question> to talk to this agent",
+    "slackDesc": "Slack Bot",
+    "discordDesc": "Slash Commands (/ask)",
+    "teamsDesc": "Teams Bot",
+    "feishuDesc": "Feishu / Lark",
+    "wecomDesc": "WebSocket / Webhook",
+    "dingtalkDesc": "Stream Mode",
+    "atlassianDesc": "Jira / Confluence / Compass (Rovo MCP)",
+    "botToken": "Bot Token",
+    "signingSecret": "Signing Secret",
+    "applicationId": "Application ID",
+    "publicKey": "Public Key",
+    "appId": "App ID",
+    "appIdClientId": "App ID (Client ID)",
+    "appSecret": "App Secret",
+    "appSecretClientSecret": "App Secret (Client Secret)",
+    "appSecretLabel": "AppSecret",
+    "appKey": "AppKey",
+    "encryptKey": "Encrypt Key",
+    "webhookUrl": "Webhook URL",
+    "webhookUrlEventSub": "Webhook URL (Event Subscriptions URL)",
+    "interactionsEndpointUrl": "Interactions Endpoint URL",
+    "messagingEndpointUrl": "Messaging Endpoint URL",
+    "corpId": "CorpID",
+    "agentId": "AgentID",
+    "secret": "Secret",
+    "token": "Token",
+    "encodingAesKey": "EncodingAESKey",
+    "botId": "Bot ID",
+    "botSecret": "Bot Secret",
+    "apiKey": "API Key",
+    "cloudId": "Cloud ID",
+    "atlassianConfigured": "API Key configured — Jira / Confluence / Compass tools available",
+    "atlassianConnected": "Connected — {{count}} tools available",
+    "atlassianApiKeyHint": "Service account key starts with ATSTT. Personal API token: base64-encode email:token and prefix with Basic",
+    "atlassianCloudIdHint": "Required for multi-site setups. Find it at your-site.atlassian.net/_edge/tenant_info",
+    "saveConfig": "Save Config",
+    "copy": "Copy"
   },
   "channelGuide": {
     "setupGuide": "Setup Guide",
@@ -826,6 +940,18 @@
       "ws_step5": "Copy the Bot ID and Secret that are generated → paste them above → click Save Config",
       "ws_step6": "Find the bot in WeCom and send a test message",
       "ws_note": "WebSocket mode requires no public IP, callback URL, or domain verification (ICP). The connection is managed automatically."
+    },
+    "atlassian": {
+      "step1": "Go to id.atlassian.com/manage-profile/security/api-tokens → click Create API token → give it a label → copy the token",
+      "step2": "For service accounts (recommended): go to admin.atlassian.com → Settings → API keys → Create API key. The key starts with ATSTT",
+      "step3": "Find your Cloud ID: go to your-site.atlassian.net/_edge/tenant_info → copy the cloudId value",
+      "step4": "Paste the API Key (and optionally Cloud ID) above → click Save Config",
+      "step5": "Click Test Connection to verify the API key works and discover available tools",
+      "note": "API tokens inherit the permissions of the user who created them. Service account keys are recommended for production use."
     }
+  },
+  "companySetup": {
+    "joinFailed": "Failed to join company",
+    "createFailed": "Failed to create company"
   }
 }

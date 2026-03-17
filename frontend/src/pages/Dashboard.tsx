@@ -464,7 +464,7 @@ export default function Dashboard() {
                         }}>
                             <span>{t('dashboard.table.agent')}</span>
                             <span>{t('dashboard.table.latestActivity')}</span>
-                            <span>Token</span>
+                            <span>{t('dashboard.table.token')}</span>
                             <span style={{ textAlign: 'right' }}>{t('dashboard.table.active')}</span>
                         </div>
                     </div>

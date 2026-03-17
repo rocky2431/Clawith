@@ -34,12 +34,7 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     return res.json();
 }
 
-const PERIOD_OPTIONS = [
-    { value: 'permanent', label: 'Permanent' },
-    { value: 'daily', label: 'Daily' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'monthly', label: 'Monthly' },
-];
+const PERIOD_VALUES = ['permanent', 'daily', 'weekly', 'monthly'] as const;
 
 const PAGE_SIZE = 15;
 
@@ -108,11 +103,7 @@ export default function UserManagement() {
     };
 
     const periodLabel = (period: string) => {
-        if (isChinese) {
-            const map: Record<string, string> = { permanent: '永久', daily: '每天', weekly: '每周', monthly: '每月' };
-            return map[period] || period;
-        }
-        return PERIOD_OPTIONS.find(p => p.value === period)?.label || period;
+        return t(`userMgmt.period.${period}`, period);
     };
 
     const formatDate = (iso?: string) => {
@@ -221,7 +212,7 @@ export default function UserManagement() {
                                     <div style={{ fontWeight: 500, fontSize: '14px' }}>
                                         {user.display_name || user.username}
                                         {user.role === 'platform_admin' && (
-                                            <span style={{ marginLeft: '6px', fontSize: '10px', background: 'var(--accent-color)', color: '#fff', borderRadius: '4px', padding: '1px 6px' }}>Admin</span>
+                                            <span style={{ marginLeft: '6px', fontSize: '10px', background: 'var(--accent-color)', color: '#fff', borderRadius: '4px', padding: '1px 6px' }}>{t('common.admin')}</span>
                                         )}
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>@{user.username}</div>
@@ -231,7 +222,7 @@ export default function UserManagement() {
                                 <div>
                                     {user.source === 'feishu' ? (
                                         <span style={{ fontSize: '10px', background: 'rgba(58,132,255,0.12)', color: '#3a84ff', borderRadius: '4px', padding: '2px 7px', whiteSpace: 'nowrap' }}>
-                                            飞书
+                                            {t('common.channels.feishu')}
                                         </span>
                                     ) : (
                                         <span style={{ fontSize: '10px', background: 'rgba(0,180,120,0.12)', color: 'var(--success)', borderRadius: '4px', padding: '2px 7px', whiteSpace: 'nowrap' }}>
@@ -290,8 +281,8 @@ export default function UserManagement() {
                                                 value={editForm.quota_message_period}
                                                 onChange={e => setEditForm({ ...editForm, quota_message_period: e.target.value })}
                                             >
-                                                {PERIOD_OPTIONS.map(p => (
-                                                    <option key={p.value} value={p.value}>{periodLabel(p.value)}</option>
+                                                {PERIOD_VALUES.map(v => (
+                                                    <option key={v} value={v}>{periodLabel(v)}</option>
                                                 ))}
                                             </select>
                                         </div>

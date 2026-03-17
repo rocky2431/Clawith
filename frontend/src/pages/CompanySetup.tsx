@@ -48,7 +48,7 @@ export default function CompanySetup() {
             await refreshUser();
             navigate('/');
         } catch (err: any) {
-            setError(err.message || 'Failed to join company');
+            setError(err.message || t('companySetup.joinFailed'));
         } finally {
             setLoading(false);
         }
@@ -64,7 +64,7 @@ export default function CompanySetup() {
             // Navigate to Enterprise Settings to configure LLM models
             navigate('/enterprise');
         } catch (err: any) {
-            setError(err.message || 'Failed to create company');
+            setError(err.message || t('companySetup.createFailed'));
         } finally {
             setLoading(false);
         }
