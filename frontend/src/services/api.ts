@@ -283,6 +283,17 @@ export const enterpriseApi = {
         request<{ connected: boolean; version?: string; reason?: string }>('/enterprise/knowledge-base/openviking-status'),
 };
 
+// ─── Feature Flags ────────────────────────────────────
+export const featureFlagApi = {
+    list: () => request<any[]>('/feature-flags/'),
+    create: (data: { key: string; description?: string; flag_type?: string; enabled?: boolean }) =>
+        request<any>('/feature-flags/', { method: 'POST', body: JSON.stringify(data) }),
+    update: (flagId: string, data: Record<string, unknown>) =>
+        request<any>(`/feature-flags/${flagId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (flagId: string) =>
+        request<void>(`/feature-flags/${flagId}`, { method: 'DELETE' }),
+};
+
 // ─── Activity Logs ────────────────────────────────────
 export const activityApi = {
     list: (agentId: string, limit = 50) =>

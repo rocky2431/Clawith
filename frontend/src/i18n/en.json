@@ -528,7 +528,18 @@
       "approvals": "Approvals",
       "skills": "Skills",
       "quotas": "Quotas",
-      "users": "Users"
+      "users": "Users",
+      "flags": "Feature Flags"
+    },
+    "flags": {
+      "title": "Feature Flags",
+      "key": "Key",
+      "description": "Description",
+      "type": "Type",
+      "enabled": "Enabled",
+      "create": "Create Flag",
+      "noFlags": "No feature flags configured",
+      "confirmDelete": "Delete this feature flag?"
     },
     "stats": {
       "users": "{{count}} users",

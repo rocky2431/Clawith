@@ -1,7 +1,7 @@
 """Agent tools — unified file-based tools that give digital employees
 access to their own structured workspace.
 
-Design principle:  ONE set of file tools covers EVERYTHING.
+Design principle: ONE set of file tools covers EVERYTHING.
 The agent's workspace uses well-known paths:
   - tasks.json          → task list (auto-synced from DB)
   - soul.md             → personality definition
@@ -13,6 +13,7 @@ The agent reads/writes these files directly. No per-concept tools needed.
 """
 
 import json
+import logging
 import os
 import uuid
 from contextvars import ContextVar
@@ -22,6 +23,8 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.database import async_session
+
+logger = logging.getLogger(__name__)
 from app.models.task import Task
 from app.config import get_settings
 
@@ -1065,6 +1068,24 @@ async def execute_tool(
     """Execute a tool call and return the result as a string."""
     ws = await ensure_workspace(agent_id)
 
+    # ── Security zone enforcement (fail closed: default to most restrictive on error) ──
+    _SENSITIVE_TOOLS = {"send_feishu_message", "send_email", "delete_file", "write_file", "reply_email"}
+    _SAFE_TOOLS = {"list_files", "read_file", "jina_search", "jina_read", "web_search", "read_document", "list_tasks", "get_task"}
+    try:
+        from app.models.agent import Agent as _AgentModel
+        async with async_session() as _szdb:
+            _sz_r = await _szdb.execute(select(_AgentModel.security_zone).where(_AgentModel.id == agent_id))
+            _zone = _sz_r.scalar_one_or_none() or "standard"
+
+        if _zone == "public" and tool_name not in _SAFE_TOOLS:
+            return f"🔒 Tool '{tool_name}' is blocked — this agent is in the 'public' security zone and can only use safe read-only tools."
+        if _zone == "restricted" and tool_name in _SENSITIVE_TOOLS:
+            return f"🔒 Tool '{tool_name}' requires approval — this agent is in the 'restricted' security zone. Please ask an admin to approve this action."
+    except Exception as e:
+        logger.warning("Security zone check failed for agent %s — blocking sensitive tool %s: %s", agent_id, tool_name, e)
+        if tool_name in _SENSITIVE_TOOLS:
+            return f"🔒 Tool '{tool_name}' blocked — security zone check failed. Please retry or contact admin."
+
     # ── Autonomy boundary check ──
     action_type = _TOOL_AUTONOMY_MAP.get(tool_name)
     if action_type:
@@ -1216,8 +1237,8 @@ async def _web_search(arguments: dict) -> str:
             tool = r.scalar_one_or_none()
             if tool and tool.config:
                 config = tool.config
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("web_search config load failed: %s", e)
 
     engine = config.get("search_engine", "duckduckgo")
     api_key = config.get("api_key", "")
@@ -1279,8 +1300,8 @@ async def _get_jina_api_key() -> str:
             setting = result.scalar_one_or_none()
             if setting and setting.value.get("api_key"):
                 return setting.value["api_key"]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Suppressed: %s", e)
     from app.config import get_settings
     return get_settings().JINA_API_KEY
 
@@ -1544,8 +1565,8 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict, agent_id=None) -> s
             try:
                 from app.api.atlassian import get_atlassian_api_key_for_agent
                 direct_api_key = await get_atlassian_api_key_for_agent(agent_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Suppressed: %s", e)
         client = MCPClient(mcp_url, api_key=direct_api_key)
         return await client.call_tool(mcp_name, arguments)
 
@@ -1588,8 +1609,8 @@ async def _execute_via_smithery_connect(mcp_url: str, tool_name: str, arguments:
                 if disc_tool and disc_tool.config:
                     namespace = namespace or disc_tool.config.get("smithery_namespace")
                     connection_id = connection_id or disc_tool.config.get("smithery_connection_id")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
 
     if not namespace or not connection_id:
         return (
@@ -1728,8 +1749,8 @@ async def _smithery_auto_recover(api_key: str, mcp_url: str, namespace: str, con
                         if at:
                             at.config = {**(at.config or {}), **new_config}
                     await db.commit()
-            except Exception:
-                pass  # Non-critical — connection may still work
+            except Exception as e:
+                logger.debug("Suppressed: %s", e)
 
         if conn_result.get("auth_url"):
             return (
@@ -2261,10 +2282,8 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
                             await db.commit()
                             await _save_outgoing_to_feishu_session(resolved)
                             return f"✅ Successfully sent message to {member_name}"
-                except Exception:
-                    pass
-
-            # Step 3: Use stored open_id with agent's app
+                except Exception as e:
+                    logger.debug("Suppressed: %s", e)
             if target_member.feishu_open_id:
                 resp = await _try_send(config.app_id, config.app_secret, target_member.feishu_open_id)
                 if resp.get("code") == 0:
@@ -2380,10 +2399,10 @@ async def _send_web_message(agent_id: uuid.UUID, args: dict) -> str:
                                 "content": message_text,
                                 "triggers": ["web_message"],
                             })
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                        except Exception as e:
+                            logger.debug("Suppressed: %s", e)
+            except Exception as e:
+                logger.debug("Suppressed: %s", e)
 
             display = target_user.display_name or target_user.username
             return f"✅ Message sent to {display} on web platform. It has been saved to their chat history."
@@ -2945,11 +2964,8 @@ async def _execute_code(ws: Path, arguments: dict) -> str:
         # Clean up temp script
         try:
             script_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-
-# ─── Resource Discovery Executors ───────────────────────────────
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
 
 async def _discover_resources(arguments: dict) -> str:
     """Search Smithery registry for MCP servers."""
@@ -3046,8 +3062,8 @@ async def _handle_set_trigger(agent_id: uuid.UUID, arguments: dict) -> str:
                 _latest_ts = _snap_r.scalar_one_or_none()
                 if _latest_ts:
                     config["_since_ts"] = _latest_ts.isoformat()
-        except Exception:
-            pass  # Fallback to trigger.created_at in the daemon
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
     elif ttype == "webhook":
         # Auto-generate a unique token for the webhook URL
         import secrets
@@ -3113,10 +3129,8 @@ async def _handle_set_trigger(agent_id: uuid.UUID, arguments: dict) -> str:
             await write_audit_log("trigger_created", {
                 "name": name, "type": ttype, "reason": reason[:100],
             }, agent_id=agent_id)
-        except Exception:
-            pass
-
-        # Return webhook URL for webhook triggers
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
         if ttype == "webhook":
             from app.config import get_settings
             settings = get_settings()
@@ -3174,8 +3188,8 @@ async def _handle_update_trigger(agent_id: uuid.UUID, arguments: dict) -> str:
             await write_audit_log("trigger_updated", {
                 "name": name, "changes": "; ".join(changes),
             }, agent_id=agent_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
 
         return f"✅ Trigger '{name}' updated: {'; '.join(changes)}"
 
@@ -3211,8 +3225,8 @@ async def _handle_cancel_trigger(agent_id: uuid.UUID, arguments: dict) -> str:
         try:
             from app.services.audit_logger import write_audit_log
             await write_audit_log("trigger_cancelled", {"name": name}, agent_id=agent_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
 
         return f"✅ Trigger '{name}' cancelled. It will no longer fire."
 
@@ -4471,8 +4485,8 @@ async def _feishu_user_search(agent_id: uuid.UUID, arguments: dict) -> str:
         if _cache_file.exists():
             _raw = _json.loads(_cache_file.read_text())
             _cached_users = _raw.get("users", [])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Suppressed: %s", e)
 
     name_lower = name.lower()
 
@@ -4524,10 +4538,8 @@ async def _feishu_user_search(agent_id: uuid.UUID, arguments: dict) -> str:
                 if _om.department_path:
                     lines.append(f"  部门: {_om.department_path}")
             return "\n".join(lines)
-    except Exception:
-        pass
-
-    # ── Fallback: try User table ──────────────────────────────────────
+    except Exception as e:
+        logger.debug("Suppressed: %s", e)
     try:
         from app.database import async_session as _async_session
         from sqlalchemy import select as _sa_select
@@ -4550,8 +4562,8 @@ async def _feishu_user_search(agent_id: uuid.UUID, arguments: dict) -> str:
                 if _email:
                     result_lines.append(f"  邮箱: {_email}")
                 return "\n".join(result_lines)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Suppressed: %s", e)
 
     total = len(_cached_users)
     if total == 0:
@@ -4577,11 +4589,8 @@ async def _feishu_contacts_refresh(agent_id: uuid.UUID) -> None:
     try:
         if _cache_file.exists():
             _cache_file.unlink()
-    except Exception:
-        pass
-
-
-# ─── Email Tool Helpers ─────────────────────────────────────
+    except Exception as e:
+        logger.debug("Suppressed: %s", e)
 
 async def _get_email_config(agent_id: uuid.UUID) -> dict:
     """Retrieve per-agent email config from the send_email tool's AgentTool config."""

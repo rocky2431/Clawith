@@ -83,10 +83,11 @@ class CollaborationService:
         if not agent:
             return []
 
-        # Find agents by same creator or with company-wide permissions
+        # Find agents within the same tenant (tenant isolation)
         collaborators_result = await db.execute(
             select(Agent).where(
                 Agent.id != agent_id,
+                Agent.tenant_id == agent.tenant_id,
                 Agent.status.in_(["running", "stopped"]),
             ).order_by(Agent.name)
         )
@@ -106,29 +107,54 @@ class CollaborationService:
         self, db: AsyncSession, from_agent_id: uuid.UUID,
         to_agent_id: uuid.UUID, message: str, msg_type: str = "notify"
     ) -> dict:
-        """Send an inter-agent message.
+        """Send an inter-agent message via Redis Streams event bus.
 
+        Falls back to file-based inbox if Redis is unavailable.
         msg_type: 'notify' (fire-and-forget) or 'consult' (expects reply)
         """
         from_result = await db.execute(select(Agent).where(Agent.id == from_agent_id))
         from_agent = from_result.scalar_one_or_none()
 
-        # Write message to target agent's workspace
-        from pathlib import Path
-        from app.config import get_settings
-        settings = get_settings()
+        # Resolve tenant_id for stream scoping
+        to_result = await db.execute(select(Agent.tenant_id).where(Agent.id == to_agent_id))
+        tenant_id = to_result.scalar_one_or_none()
 
-        inbox_dir = Path(settings.AGENT_DATA_DIR) / str(to_agent_id) / "workspace" / "inbox"
-        inbox_dir.mkdir(parents=True, exist_ok=True)
+        # Publish to Redis Streams event bus (durable, replayable)
+        try:
+            from app.core.event_bus import event_bus, collab_stream
+            stream_key = collab_stream(str(tenant_id)) if tenant_id else "events:global:collab"
+            await event_bus.publish(
+                stream=stream_key,
+                event_type=f"collab.{msg_type}",
+                payload={
+                    "from_agent_id": str(from_agent_id),
+                    "from_agent_name": from_agent.name if from_agent else "Unknown",
+                    "to_agent_id": str(to_agent_id),
+                    "message": message[:2000],
+                    "msg_type": msg_type,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                tenant_id=str(tenant_id) if tenant_id else None,
+            )
+            logger.info("Collab message published to event bus: %s -> %s", from_agent_id, to_agent_id)
+        except Exception as e:
+            # Fallback: write to file-based inbox if Redis is down
+            logger.warning("Event bus publish failed, falling back to file inbox: %s", e)
+            from pathlib import Path
+            from app.config import get_settings
+            settings = get_settings()
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        msg_file = inbox_dir / f"{timestamp}_{str(from_agent_id)[:8]}.md"
-        msg_file.write_text(
-            f"# 来自 {from_agent.name if from_agent else 'Unknown'} 的消息\n"
-            f"- 类型: {msg_type}\n"
-            f"- 时间: {datetime.now(timezone.utc).isoformat()}\n\n"
-            f"{message}\n"
-        )
+            inbox_dir = Path(settings.AGENT_DATA_DIR) / str(to_agent_id) / "workspace" / "inbox"
+            inbox_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            msg_file = inbox_dir / f"{timestamp}_{str(from_agent_id)[:8]}.md"
+            msg_file.write_text(
+                f"# 来自 {from_agent.name if from_agent else 'Unknown'} 的消息\n"
+                f"- 类型: {msg_type}\n"
+                f"- 时间: {datetime.now(timezone.utc).isoformat()}\n\n"
+                f"{message}\n"
+            )
 
         db.add(AuditLog(
             agent_id=from_agent_id,

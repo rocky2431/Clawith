@@ -81,6 +81,9 @@ class AgentCreate(BaseModel):
     # Token limits
     max_tokens_per_day: int | None = None
     max_tokens_per_month: int | None = None
+    # Classification
+    agent_class: str = "general"  # general | specialist | executive
+    security_zone: str = "standard"  # public | standard | restricted
     # Skills to copy into agent workspace
     skill_ids: list[uuid.UUID] = []
 
@@ -117,6 +120,8 @@ class AgentOut(BaseModel):
     llm_calls_today: int = 0
     max_llm_calls_per_day: int = 100
     agent_type: str = "native"
+    agent_class: str = "general"
+    security_zone: str = "standard"
     openclaw_last_seen: datetime | None = None
     created_at: datetime
     last_active_at: datetime | None = None
@@ -143,6 +148,8 @@ class AgentUpdate(BaseModel):
     heartbeat_interval_minutes: int | None = None
     heartbeat_active_hours: str | None = None
     timezone: str | None = None
+    agent_class: str | None = None
+    security_zone: str | None = None
     expires_at: datetime | None = None  # Admin only — extend agent expiry
 
 

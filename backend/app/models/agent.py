@@ -36,6 +36,10 @@ class Agent(Base):
     # Last time OpenClaw polled the gateway (online status indicator)
     openclaw_last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Agent classification and security zone
+    agent_class: Mapped[str] = mapped_column(String(30), default="general", nullable=False)
+    security_zone: Mapped[str] = mapped_column(String(30), default="standard", nullable=False)
+
     # Runtime
     status: Mapped[str] = mapped_column(
         Enum("creating", "running", "idle", "stopped", "error", name="agent_status_enum", create_constraint=False),

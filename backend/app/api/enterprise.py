@@ -1,11 +1,14 @@
 """Enterprise management API routes: LLM pool, enterprise info, approvals, audit logs."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.core.security import get_current_admin, get_current_user, require_role
 from app.database import get_db
@@ -63,6 +66,16 @@ async def add_llm_model(
     )
     db.add(model)
     await db.flush()
+
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="llm_model.created", severity="info",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="create_llm_model", resource_type="llm_model", resource_id=model.id,
+            details={"provider": model.provider, "model": model.model, "label": model.label})
+    except Exception:
+        logger.warning("Audit write failed for llm_model.created", exc_info=True)
+
     return LLMModelOut.model_validate(model)
 
 
@@ -105,6 +118,15 @@ async def remove_llm_model(
         await db.execute(
             update(Agent).where(Agent.fallback_model_id == model_id).values(fallback_model_id=None)
         )
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="llm_model.deleted", severity="warn",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="delete_llm_model", resource_type="llm_model", resource_id=model.id,
+            details={"provider": model.provider, "model": model.model, "force": force})
+    except Exception:
+        logger.warning("Audit write failed for llm_model.deleted", exc_info=True)
+
     await db.delete(model)
     await db.commit()
 
@@ -140,12 +162,27 @@ async def update_llm_model(
         if hasattr(data, 'supports_vision') and data.supports_vision is not None:
             model.supports_vision = data.supports_vision
 
+        try:
+            from app.core.policy import write_audit_event
+            await write_audit_event(db, event_type="llm_model.updated", severity="info",
+                actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+                action="update_llm_model", resource_type="llm_model", resource_id=model.id,
+                details={"provider": model.provider, "model": model.model})
+        except Exception:
+            logger.warning("Audit write failed for llm_model.updated", exc_info=True)
+
         await db.commit()
         await db.refresh(model)
         return LLMModelOut.model_validate(model)
-    except SQLAlchemyError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to update model")
+        from sqlalchemy.exc import IntegrityError
+        if isinstance(e, IntegrityError):
+            raise HTTPException(status_code=409, detail="Conflict: model with these settings already exists")
+        logger.error("Failed to update LLM model %s: %s", model_id, e)
+        raise HTTPException(status_code=500, detail=f"Failed to update model: {type(e).__name__}")
 
 
 # ─── Enterprise Info ────────────────────────────────────
@@ -280,8 +317,12 @@ async def get_enterprise_stats(
     total_users = await db.execute(
         select(func.count(User.id)).where(User.tenant_id == tid, User.is_active == True)
     )
+    tenant_agent_ids = select(Agent.id).where(Agent.tenant_id == tid)
     pending_approvals = await db.execute(
-        select(func.count(ApprovalRequest.id)).where(ApprovalRequest.status == "pending")
+        select(func.count(ApprovalRequest.id)).where(
+            ApprovalRequest.status == "pending",
+            ApprovalRequest.agent_id.in_(tenant_agent_ids),
+        )
     )
 
     return {
@@ -376,6 +417,15 @@ async def update_tenant_quotas(
         tenant.min_poll_interval_floor = data.min_poll_interval_floor
     if data.max_webhook_rate_ceiling is not None:
         tenant.max_webhook_rate_ceiling = data.max_webhook_rate_ceiling
+
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="quotas.updated", severity="info",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="update_tenant_quotas", resource_type="tenant", resource_id=current_user.tenant_id,
+            details=data.model_dump(exclude_unset=True))
+    except Exception:
+        logger.warning("Audit write failed for quotas.updated", exc_info=True)
 
     await db.commit()
     return {

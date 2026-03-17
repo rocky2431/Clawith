@@ -1,18 +1,21 @@
 """Agent (Digital Employee) API routes."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.permissions import check_agent_access, is_agent_creator
-from app.core.security import get_current_user, require_role
+from app.core.security import get_current_user
 from app.database import get_db
+from app.domain.agent_lifecycle import InvalidTransitionError, TransitionContext, transition
 from app.models.agent import Agent, AgentPermission
 from app.models.user import User
 from app.schemas.schemas import AgentCreate, AgentOut, AgentUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -182,7 +185,9 @@ async def create_agent(
         max_tokens_per_day=data.max_tokens_per_day,
         max_tokens_per_month=data.max_tokens_per_month,
         template_id=data.template_id,
-        status="creating" if data.agent_type != "openclaw" else "idle",
+        agent_class=data.agent_class,
+        security_zone=data.security_zone,
+        status="draft",
         expires_at=expires_at,
         max_llm_calls_per_day=max_llm_calls,
         max_triggers=default_max_triggers,
@@ -194,6 +199,13 @@ async def create_agent(
 
     db.add(agent)
     await db.flush()
+
+    # Lifecycle: draft → creating (validated by state machine)
+    try:
+        ctx = TransitionContext(is_system=True)
+        agent.status = transition("draft", "creating", ctx)
+    except InvalidTransitionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Auto-create Participant identity for the new agent
     from app.models.participant import Participant
@@ -222,7 +234,16 @@ async def create_agent(
         import secrets, hashlib
         raw_key = f"oc-{secrets.token_urlsafe(32)}"
         agent.api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-        agent.status = "idle"
+        agent.status = transition(agent.status, "idle", TransitionContext(is_system=True))
+        # Audit: openclaw agent created
+        try:
+            from app.core.policy import write_audit_event
+            await write_audit_event(db, event_type="agent.created", severity="info",
+                actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+                action="create_agent", resource_type="agent", resource_id=agent.id,
+                details={"name": agent.name, "agent_type": "openclaw"})
+        except Exception:
+            logger.warning("Audit write failed for agent.created", exc_info=True)
         await db.commit()
         out = AgentOut.model_validate(agent).model_dump()
         out["api_key"] = raw_key  # Return once on creation
@@ -274,6 +295,16 @@ async def create_agent(
     # Start container
     await agent_manager.start_container(db, agent)
     await db.flush()
+
+    # Audit: agent created
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="agent.created", severity="info",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="create_agent", resource_type="agent", resource_id=agent.id,
+            details={"name": agent.name, "agent_type": agent.agent_type})
+    except Exception:
+        logger.warning("Audit write failed for agent.created", exc_info=True)
 
     return AgentOut.model_validate(agent)
 
@@ -412,7 +443,10 @@ async def update_agent(
         if new_expires is None or new_expires > datetime.now(tz.utc):
             if agent.is_expired:
                 agent.is_expired = False
-                agent.status = "idle"
+                try:
+                    agent.status = transition(agent.status, "idle", TransitionContext(is_admin=True))
+                except InvalidTransitionError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
 
     # Enforce heartbeat floor from tenant
     clamped_fields = []  # track fields adjusted by tenant floor
@@ -473,6 +507,16 @@ async def update_agent(
                 p.avatar_url = agent.avatar_url
             await db.flush()
 
+    # Audit: agent updated
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="agent.updated", severity="info",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="update_agent", resource_type="agent", resource_id=agent.id,
+            details={"changed_fields": list(update_data.keys())})
+    except Exception:
+        logger.warning("Audit write failed for agent.updated", exc_info=True)
+
     out = AgentOut.model_validate(agent).model_dump()
     if clamped_fields:
         out["_clamped_fields"] = clamped_fields
@@ -494,39 +538,33 @@ async def delete_agent(
     from app.services.agent_manager import agent_manager
     try:
         await agent_manager.remove_container(agent)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to remove container for agent %s: %s", agent_id, e)
     try:
         await agent_manager.archive_agent_files(agent.id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to archive files for agent %s: %s", agent_id, e)
 
     # Delete related records that reference this agent
     # Use savepoints so a failure in one table doesn't poison the whole transaction
-    from sqlalchemy import text
+    from sqlalchemy import text, table, column
 
-    cleanup_tables = [
-        "agent_activity_logs",
-        "audit_logs",
-        "approval_requests",
-        "chat_messages",
-        "chat_sessions",
-        "tasks",
-        "agent_schedules",
-        "agent_triggers",
-        "channel_configs",
-        "agent_permissions",
-        "agent_tools",
-        "agent_relationships",
+    # Whitelist of tables to clean — validated to prevent SQL injection
+    _CLEANUP_TABLES = frozenset({
+        "agent_activity_logs", "audit_logs", "approval_requests",
+        "chat_messages", "chat_sessions", "tasks",
+        "agent_schedules", "agent_triggers", "channel_configs",
+        "agent_permissions", "agent_tools", "agent_relationships",
         "gateway_messages",
-    ]
+    })
 
-    for table in cleanup_tables:
+    for table_name in _CLEANUP_TABLES:
         try:
             async with db.begin_nested():
-                await db.execute(text(f"DELETE FROM {table} WHERE agent_id = :aid"), {"aid": agent_id})
-        except Exception:
-            pass
+                t = table(table_name, column("agent_id"))
+                await db.execute(t.delete().where(t.c.agent_id == agent_id))
+        except Exception as e:
+            logger.debug("Cleanup skip %s for agent %s: %s", table_name, agent_id, e)
 
     # Also clean agent_agent_relationships (has both agent_id and target_agent_id)
     try:
@@ -535,15 +573,15 @@ async def delete_agent(
                 text("DELETE FROM agent_agent_relationships WHERE agent_id = :aid OR target_agent_id = :aid"),
                 {"aid": agent_id},
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Cleanup skip agent_agent_relationships for agent %s: %s", agent_id, e)
 
     # Also clear plaza posts by this agent
     try:
         async with db.begin_nested():
             await db.execute(text("DELETE FROM plaza_posts WHERE author_id = :aid"), {"aid": str(agent_id)})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Cleanup skip plaza_posts for agent %s: %s", agent_id, e)
 
     # Clean up Participant identity
     try:
@@ -552,8 +590,18 @@ async def delete_agent(
                 text("DELETE FROM participants WHERE type = 'agent' AND ref_id = :aid"),
                 {"aid": agent_id},
             )
+    except Exception as e:
+        logger.debug("Cleanup skip participants for agent %s: %s", agent_id, e)
+
+    # Audit: agent deleted (before commit so we still have agent data)
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="agent.deleted", severity="warn",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="delete_agent", resource_type="agent", resource_id=agent.id,
+            details={"name": agent.name})
     except Exception:
-        pass
+        logger.warning("Audit write failed for agent.deleted", exc_info=True)
 
     await db.delete(agent)
     await db.commit()
@@ -573,6 +621,16 @@ async def start_agent(
     from app.services.agent_manager import agent_manager
     await agent_manager.start_container(db, agent)
     await db.flush()
+
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="agent.started", severity="info",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="start_agent", resource_type="agent", resource_id=agent.id,
+            details={"name": agent.name})
+    except Exception:
+        logger.warning("Audit write failed for agent.started", exc_info=True)
+
     return AgentOut.model_validate(agent)
 
 
@@ -590,6 +648,16 @@ async def stop_agent(
     from app.services.agent_manager import agent_manager
     await agent_manager.stop_container(agent)
     await db.flush()
+
+    try:
+        from app.core.policy import write_audit_event
+        await write_audit_event(db, event_type="agent.stopped", severity="info",
+            actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
+            action="stop_agent", resource_type="agent", resource_id=agent.id,
+            details={"name": agent.name})
+    except Exception:
+        logger.warning("Audit write failed for agent.stopped", exc_info=True)
+
     return AgentOut.model_validate(agent)
 
 

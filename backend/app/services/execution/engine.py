@@ -117,7 +117,8 @@ class AgentExecutionEngine:
 
         Returns the final assistant response content.
         """
-        from app.services.llm_client import create_llm_client
+        import json as _json
+        from app.services.llm_client import LLMMessage, create_llm_client
 
         # Run before_agent hooks
         for mw in self.middlewares:
@@ -139,18 +140,27 @@ class AgentExecutionEngine:
 
                 state.round_number = round_i
 
-                # Call LLM
-                response = await client.chat(
-                    messages=[{"role": "system", "content": state.system_prompt}] + state.messages,
+                # Build LLMMessage list from state
+                api_messages = [LLMMessage(role="system", content=state.system_prompt)]
+                for msg in state.messages:
+                    api_messages.append(LLMMessage(
+                        role=msg.get("role", "user"),
+                        content=msg.get("content"),
+                        tool_calls=msg.get("tool_calls"),
+                        tool_call_id=msg.get("tool_call_id"),
+                        reasoning_content=msg.get("reasoning_content"),
+                    ))
+
+                # Call LLM via streaming API
+                response = await client.stream(
+                    messages=api_messages,
                     tools=state.tools if state.tools else None,
+                    on_chunk=state.callbacks.on_chunk,
+                    on_thinking=state.callbacks.on_thinking,
                 )
 
-                # Extract content and tool calls
-                content = response.get("content", "")
-                tool_calls = response.get("tool_calls", [])
-
-                if content and state.callbacks.on_chunk:
-                    await state.callbacks.on_chunk(content)
+                content = response.content or ""
+                tool_calls = response.tool_calls
 
                 # No tool calls — we're done
                 if not tool_calls:
@@ -158,17 +168,26 @@ class AgentExecutionEngine:
                     break
 
                 # Process tool calls
-                state.messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+                state.messages.append({
+                    "role": "assistant",
+                    "content": content or None,
+                    "tool_calls": [{"id": tc["id"], "type": "function", "function": tc["function"]} for tc in tool_calls],
+                    "reasoning_content": response.reasoning_content,
+                })
 
                 for tc in tool_calls:
-                    tool_name = tc.get("function", {}).get("name", "")
-                    tool_args = tc.get("function", {}).get("arguments", {})
+                    fn = tc.get("function", {})
+                    tool_name = fn.get("name", "")
+                    raw_args = fn.get("arguments", "{}")
+                    try:
+                        tool_args = _json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except _json.JSONDecodeError:
+                        tool_args = {}
                     tool_id = tc.get("id", "")
 
                     if state.callbacks.on_tool_call:
                         await state.callbacks.on_tool_call(tool_name, tool_args, "running")
 
-                    # Execute tool (placeholder — wired to existing execute_tool in websocket.py)
                     from app.services.agent_tools import execute_tool
                     tool_result = await execute_tool(
                         tool_name, tool_args,
@@ -192,8 +211,8 @@ class AgentExecutionEngine:
                     })
 
                 # Track tokens
-                usage = response.get("usage", {})
-                state.accumulated_tokens += usage.get("total_tokens", 0)
+                if response.usage:
+                    state.accumulated_tokens += response.usage.get("total_tokens", 0)
             else:
                 final_content = content if content else "I've reached the maximum number of tool call rounds."
 
@@ -206,6 +225,8 @@ class AgentExecutionEngine:
                     break
             else:
                 raise
+        finally:
+            await client.close()
 
         # Run after_agent hooks
         for mw in self.middlewares:

@@ -534,7 +534,18 @@
       "approvals": "审批",
       "skills": "技能管理",
       "quotas": "配额",
-      "users": "用户"
+      "users": "用户",
+      "flags": "功能开关"
+    },
+    "flags": {
+      "title": "功能开关",
+      "key": "标识",
+      "description": "描述",
+      "type": "类型",
+      "enabled": "已启用",
+      "create": "创建开关",
+      "noFlags": "暂无功能开关",
+      "confirmDelete": "确定删除此功能开关？"
     },
     "stats": {
       "users": "{{count}} 用户",

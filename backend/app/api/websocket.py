@@ -1,12 +1,12 @@
 """WebSocket chat endpoint for real-time agent conversations."""
 
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.security import decode_access_token
 from app.core.permissions import check_agent_access, is_agent_expired
@@ -15,6 +15,8 @@ from app.models.agent import Agent
 from app.models.audit import ChatMessage
 from app.models.llm import LLMModel
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
 
@@ -89,10 +91,109 @@ async def get_chat_history(
                 entry["toolArgs"] = data.get("args")
                 entry["toolStatus"] = data.get("status", "done")
                 entry["toolResult"] = data.get("result", "")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Suppressed: %s", e)
         out.append(entry)
     return out
+
+
+async def call_llm_via_engine(
+    model: LLMModel,
+    messages: list[dict],
+    agent_name: str,
+    role_description: str,
+    agent_id=None,
+    user_id=None,
+    on_chunk=None,
+    on_tool_call=None,
+    on_thinking=None,
+    supports_vision=False,
+) -> str:
+    """Call LLM via the middleware-based execution engine."""
+    from app.services.agent_tools import get_agent_tools_for_llm, AGENT_TOOLS
+    from app.services.agent_context import build_agent_context
+    from app.services.execution.engine import AgentExecutionEngine, ExecutionCallbacks, ExecutionState
+    from app.services.execution.context_middleware import ContextMiddleware
+    from app.services.execution.memory_middleware import MemoryMiddleware
+    from app.services.execution.tool_reliability import ToolReliabilityMiddleware, FallbackMiddleware
+
+    # Build system prompt
+    _current_user_name = None
+    if user_id:
+        try:
+            from app.models.user import User as _UserModel
+            async with async_session() as _udb:
+                _ur = await _udb.execute(select(_UserModel).where(_UserModel.id == user_id))
+                _u = _ur.scalar_one_or_none()
+                if _u:
+                    _current_user_name = _u.display_name or _u.username
+        except Exception:
+            logger.debug("Failed to resolve user name for engine")
+
+    system_prompt = await build_agent_context(agent_id, agent_name, role_description, current_user_name=_current_user_name)
+    tools_for_llm = await get_agent_tools_for_llm(agent_id) if agent_id else AGENT_TOOLS
+
+    # Resolve agent config
+    _max_tool_rounds = 50
+    _tenant_id = None
+    if agent_id:
+        try:
+            from app.models.agent import Agent as _AM
+            async with async_session() as _db:
+                _ar = await _db.execute(select(_AM).where(_AM.id == agent_id))
+                _agent = _ar.scalar_one_or_none()
+                if _agent:
+                    _max_tool_rounds = _agent.max_tool_rounds or 50
+                    _tenant_id = _agent.tenant_id
+        except Exception:
+            logger.debug("Failed to load agent config for engine")
+
+    # Build callbacks adapter (engine uses positional args, websocket uses dict)
+    async def _tool_call_adapter(name: str, args: dict, status: str) -> None:
+        if on_tool_call:
+            await on_tool_call({"name": name, "args": args, "status": status})
+
+    callbacks = ExecutionCallbacks(
+        on_chunk=on_chunk,
+        on_tool_call=_tool_call_adapter,
+        on_thinking=on_thinking,
+    )
+
+    # Build execution state
+    state = ExecutionState(
+        agent_id=agent_id,
+        tenant_id=_tenant_id,
+        user_id=user_id,
+        messages=list(messages),
+        tools=tools_for_llm or [],
+        system_prompt=system_prompt,
+        llm_config={
+            "provider": model.provider,
+            "api_key": model.api_key,
+            "model": model.model,
+            "base_url": model.base_url,
+        },
+        max_rounds=_max_tool_rounds,
+        callbacks=callbacks,
+    )
+
+    # Assemble middleware stack
+    middlewares = [
+        ContextMiddleware(),
+        MemoryMiddleware(),
+        ToolReliabilityMiddleware(),
+        FallbackMiddleware(),
+    ]
+
+    engine = AgentExecutionEngine(middlewares=middlewares)
+    result = await engine.execute(state)
+
+    # Record token usage
+    if agent_id and state.accumulated_tokens > 0:
+        from app.services.token_tracker import record_token_usage
+        await record_token_usage(agent_id, state.accumulated_tokens)
+
+    return result or "[Engine returned empty content]"
 
 
 async def call_llm(
@@ -114,6 +215,24 @@ async def call_llm(
         on_thinking: Optional async callback(text: str) for reasoning/thinking content.
         on_tool_call: Optional async callback(dict) for tool call status updates.
     """
+    # ── Feature flag gate: route to execution engine if enabled ──
+    if agent_id:
+        try:
+            from app.services.feature_flags import is_enabled
+            from app.models.agent import Agent as _FlagAgent
+            async with async_session() as _fdb:
+                _far = await _fdb.execute(select(_FlagAgent.tenant_id).where(_FlagAgent.id == agent_id))
+                _ftid = _far.scalar_one_or_none()
+                if await is_enabled(_fdb, "execution_engine_v2", tenant_id=_ftid):
+                    return await call_llm_via_engine(
+                        model, messages, agent_name, role_description,
+                        agent_id=agent_id, user_id=user_id,
+                        on_chunk=on_chunk, on_tool_call=on_tool_call,
+                        on_thinking=on_thinking, supports_vision=supports_vision,
+                    )
+        except Exception as e:
+            logger.warning("Feature flag gate failed for agent %s, falling back to legacy: %s", agent_id, e)
+
     from app.services.agent_tools import AGENT_TOOLS, execute_tool, get_agent_tools_for_llm
     from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
 
@@ -131,10 +250,8 @@ async def call_llm(
                         return f"⚠️ Daily token usage has reached the limit ({_agent.tokens_used_today:,}/{_agent.max_tokens_per_day:,}). Please try again tomorrow or ask admin to increase the limit."
                     if _agent.max_tokens_per_month and _agent.tokens_used_month >= _agent.max_tokens_per_month:
                         return f"⚠️ Monthly token usage has reached the limit ({_agent.tokens_used_month:,}/{_agent.max_tokens_per_month:,}). Please ask admin to increase the limit."
-        except Exception:
-            pass
-
-    # Build rich prompt with soul, memory, skills, relationships
+        except Exception as e:
+            logger.warning("Token limit check failed for agent %s — proceeding without quota enforcement: %s", agent_id, e)
     from app.services.agent_context import build_agent_context
     # Look up current user's display name so the agent knows who it's talking to
     _current_user_name = None
@@ -146,8 +263,8 @@ async def call_llm(
                 _u = _ur.scalar_one_or_none()
                 if _u:
                     _current_user_name = _u.display_name or _u.username
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
     system_prompt = await build_agent_context(agent_id, agent_name, role_description, current_user_name=_current_user_name)
 
     # Load tools dynamically from DB
@@ -319,8 +436,8 @@ async def call_llm(
                         "status": "running",
                         "reasoning_content": full_reasoning_content
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Suppressed: %s", e)
 
             result = await execute_tool(
                 tool_name, args,
@@ -339,8 +456,8 @@ async def call_llm(
                         "result": result,
                         "reasoning_content": full_reasoning_content
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Suppressed: %s", e)
 
             api_messages.append(LLMMessage(
                 role="tool",
@@ -763,10 +880,8 @@ async def websocket_chat(
                     try:
                         await increment_conversation_usage(user_id)
                         await increment_agent_llm_usage(agent_id)
-                    except Exception:
-                        pass
-
-                    # Log activity
+                    except Exception as e:
+                        logger.debug("Suppressed: %s", e)
                     from app.services.activity_logger import log_activity
                     await log_activity(agent_id, "chat_reply", f"Replied to web chat: {assistant_response[:80]}", detail={"channel": "web", "user_text": content[:200], "reply": assistant_response[:500]})
                 except WebSocketDisconnect:
@@ -863,6 +978,6 @@ async def websocket_chat(
         manager.disconnect(agent_id_str, websocket)
         try:
             await websocket.close(code=1011)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Suppressed: %s", e)
 

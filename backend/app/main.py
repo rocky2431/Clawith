@@ -101,6 +101,8 @@ async def lifespan(app: FastAPI):
         import app.models.trigger        # noqa
         import app.models.notification   # noqa
         import app.models.gateway_message # noqa
+        import app.models.feature_flag    # noqa
+        import app.models.security_audit  # noqa
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             # Add 'atlassian' to channel_type_enum if it doesn't exist yet (idempotent)
@@ -266,6 +268,7 @@ from app.api.webhooks import router as webhooks_router
 from app.api.notification import router as notification_router
 from app.api.gateway import router as gateway_router
 from app.api.config_history import router as config_history_router
+from app.api.feature_flags import router as feature_flags_router
 
 # All API routers — mounted under both /api (backward compat) and /api/v1
 _api_routers = [
@@ -275,7 +278,7 @@ _api_routers = [
     schedules_router, tools_router, files_upload_router, enterprise_kb_router,
     skills_router, users_router, slack_router, discord_router, dingtalk_router,
     wecom_router, teams_router, atlassian_router, notification_router,
-    gateway_router, config_history_router,
+    gateway_router, config_history_router, feature_flags_router,
 ]
 
 for _r in _api_routers:
