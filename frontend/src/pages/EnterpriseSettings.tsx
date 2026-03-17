@@ -851,13 +851,9 @@ export default function EnterpriseSettings() {
                                         if (btn) btn.textContent = 'Testing...';
                                         try {
                                             const token = localStorage.getItem('token');
-                                            const testData: any = { provider: modelForm.provider, model: modelForm.model, api_key: modelForm.api_key, base_url: modelForm.base_url || undefined };
-                                            // For editing: if no new api_key, we can't test (need the key)
-                                            if (editingModelId && !modelForm.api_key) {
-                                                alert(t('enterprise.llm.testNeedKey', 'Please enter the API Key to test the connection.'));
-                                                if (btn) btn.textContent = origText;
-                                                return;
-                                            }
+                                            const testData: any = { provider: modelForm.provider, model: modelForm.model, base_url: modelForm.base_url || undefined };
+                                            if (modelForm.api_key) testData.api_key = modelForm.api_key;
+                                            if (editingModelId) testData.model_id = editingModelId;
                                             const res = await fetch('/api/enterprise/llm-test', {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

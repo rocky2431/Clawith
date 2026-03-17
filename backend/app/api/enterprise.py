@@ -37,25 +37,37 @@ async def list_llm_providers(
 class LLMTestRequest(BaseModel):
     provider: str
     model: str
-    api_key: str
+    api_key: str | None = None
     base_url: str | None = None
+    model_id: str | None = None  # existing model ID to use stored API key
 
 
 @router.post("/llm-test")
 async def test_llm_model(
     data: LLMTestRequest,
     current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """Test an LLM model configuration by making a simple API call."""
     import time
     from app.services.llm_client import create_llm_client
+
+    # Resolve API key: use provided key, or look up from stored model
+    api_key = data.api_key
+    if not api_key and data.model_id:
+        result = await db.execute(select(LLMModel).where(LLMModel.id == data.model_id))
+        existing = result.scalar_one_or_none()
+        if existing:
+            api_key = existing.api_key_encrypted
+    if not api_key:
+        return {"success": False, "latency_ms": 0, "error": "API Key is required"}
 
     start = time.time()
     try:
         client = create_llm_client(
             provider=data.provider,
             model=data.model,
-            api_key=data.api_key,
+            api_key=api_key,
             base_url=data.base_url or None,
         )
         # Simple test: ask model to say "ok"
