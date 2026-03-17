@@ -386,6 +386,14 @@ function SkillsTab() {
 }
 
 
+// ─── Notification Bar Config ──────────────────────
+function NotificationBarConfig() {
+    const { t } = useTranslation();
+    const [enabled, setEnabled] = useState(false);
+    const [text, setText] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+
     useEffect(() => {
         fetchJson<any>('/enterprise/system-settings/notification_bar')
             .then(d => {

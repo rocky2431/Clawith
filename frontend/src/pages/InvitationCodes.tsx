@@ -17,12 +17,6 @@ export default function InvitationCodes() {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const loadSetting = async () => {
-        const res = await fetch('/api/v1/enterprise/system-settings/invitation_code_enabled', { headers });
-        const data = await res.json();
-        setEnabled(data.value?.enabled || false);
-    };
-
     const loadCodes = useCallback(async (p?: number, q?: string) => {
         const currentPage = p ?? page;
         const currentSearch = q ?? search;
@@ -44,14 +38,6 @@ export default function InvitationCodes() {
     const handleSearch = (value: string) => {
         setSearch(value);
         setPage(1);
-    };
-
-    const toggleEnabled = async () => {
-        const newVal = !enabled;
-        await fetch('/api/v1/enterprise/system-settings/invitation_code_enabled', {
-            method: 'PUT', headers, body: JSON.stringify({ value: { enabled: newVal } }),
-        });
-        setEnabled(newVal);
     };
 
     const createBatch = async () => {

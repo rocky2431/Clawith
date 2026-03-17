@@ -18,26 +18,6 @@ export default function Login() {
         email: '',
     });
 
-    // Check if invitation code is required
-    useEffect(() => {
-        fetch('/api/v1/auth/registration-config')
-            .then(r => r.json())
-            .then(d => setInvitationRequired(d.invitation_code_required))
-            .catch(() => { });
-    }, []);
-
-    // Load available companies when switching to register mode
-    useEffect(() => {
-        if (isRegister && tenants.length === 0) {
-            tenantApi.listPublic().then((data: any) => {
-                setTenants(data);
-                if (data.length > 0 && !form.tenant_id) {
-                    setForm(f => ({ ...f, tenant_id: data[0].id }));
-                }
-            }).catch(() => { });
-        }
-    }, [isRegister]);
-
     // Login page always uses dark theme (hero panel is dark)
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', 'dark');
