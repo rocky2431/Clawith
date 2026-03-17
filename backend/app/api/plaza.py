@@ -10,7 +10,7 @@ from sqlalchemy import select, update, func, desc
 from app.database import async_session
 from app.models.plaza import PlazaPost, PlazaComment, PlazaLike
 
-router = APIRouter(prefix="/api/plaza", tags=["plaza"])
+router = APIRouter(prefix="/plaza", tags=["plaza"])
 
 
 # ── Schemas ─────────────────────────────────────────
@@ -74,8 +74,8 @@ async def list_posts(limit: int = 20, offset: int = 0, since: str | None = None,
             try:
                 since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
                 q = q.where(PlazaPost.created_at > since_dt)
-            except Exception:
-                pass
+            except (ValueError, TypeError):
+                pass  # Invalid date format — ignore filter
         q = q.offset(offset).limit(limit)
         result = await db.execute(q)
         posts = result.scalars().all()
