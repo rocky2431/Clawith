@@ -12,6 +12,7 @@ The agent's workspace uses well-known paths:
 The agent reads/writes these files directly. No per-concept tools needed.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -823,6 +824,49 @@ AGENT_TOOLS = [
             },
         },
     },
+    # ── Plaza (Social Feed) ──
+    {
+        "type": "function",
+        "function": {
+            "name": "plaza_get_new_posts",
+            "description": "Get recent posts from the Agent Plaza (shared social feed). Returns posts and comments since a given timestamp.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Max number of posts to return (default 10)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plaza_create_post",
+            "description": "Publish a new post to the Agent Plaza. Share work insights, tips, or interesting discoveries. Do NOT share private information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Post content (max 500 chars). Must be public-safe."},
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plaza_add_comment",
+            "description": "Add a comment to an existing plaza post. Engage with colleagues' posts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "post_id": {"type": "string", "description": "The UUID of the post to comment on"},
+                    "content": {"type": "string", "description": "Comment content (max 300 chars)"},
+                },
+                "required": ["post_id", "content"],
+            },
+        },
+    },
 ]
 
 
@@ -1147,100 +1191,13 @@ async def execute_tool(
             logger.error(f"[Autonomy] Check failed — blocking as safety measure: {e}")
             return f"⚠️ Autonomy check failed ({e}). Operation blocked for safety. Please retry or contact admin."
 
+    # Timeout: 60s for code execution, 30s for everything else
+    _tool_timeout = 60.0 if tool_name == "execute_code" else 30.0
     try:
-        if tool_name == "list_files":
-            result = _list_files(ws, arguments.get("path", ""), tenant_id=_agent_tenant_id)
-        elif tool_name == "read_file":
-            path = arguments.get("path")
-            if not path:
-                return "❌ Missing required argument 'path' for read_file"
-            result = _read_file(ws, path, tenant_id=_agent_tenant_id)
-        elif tool_name == "read_document":
-            path = arguments.get("path")
-            if not path:
-                return "❌ Missing required argument 'path' for read_document"
-            max_chars = min(int(arguments.get("max_chars", 8000)), 20000)
-            result = await _read_document(ws, path, max_chars=max_chars, tenant_id=_agent_tenant_id)
-        elif tool_name == "write_file":
-            path = arguments.get("path")
-            content = arguments.get("content")
-            if not path:
-                return "❌ Missing required argument 'path' for write_file. Please provide a file path like 'skills/my-skill/SKILL.md'"
-            if content is None:
-                return "❌ Missing required argument 'content' for write_file"
-            result = _write_file(ws, path, content)
-        elif tool_name == "delete_file":
-            result = _delete_file(ws, arguments.get("path", ""))
-        elif tool_name == "manage_tasks":
-            result = await _manage_tasks(agent_id, user_id, ws, arguments)
-        elif tool_name == "set_trigger":
-            result = await _handle_set_trigger(agent_id, arguments)
-        elif tool_name == "update_trigger":
-            result = await _handle_update_trigger(agent_id, arguments)
-        elif tool_name == "cancel_trigger":
-            result = await _handle_cancel_trigger(agent_id, arguments)
-        elif tool_name == "list_triggers":
-            result = await _handle_list_triggers(agent_id)
-        elif tool_name == "send_feishu_message":
-            result = await _send_feishu_message(agent_id, arguments)
-        elif tool_name == "send_web_message":
-            result = await _send_web_message(agent_id, arguments)
-        elif tool_name == "send_message_to_agent":
-            result = await _send_message_to_agent(agent_id, arguments)
-        elif tool_name == "send_channel_file":
-            result = await _send_channel_file(agent_id, ws, arguments)
-        elif tool_name == "web_search":
-            result = await _web_search(arguments)
-        elif tool_name == "jina_search":
-            result = await _jina_search(arguments)
-        elif tool_name == "bing_search":
-            result = await _jina_search(arguments)  # redirect legacy to jina
-        elif tool_name == "jina_read":
-            result = await _jina_read(arguments)
-        elif tool_name == "read_webpage":
-            result = await _jina_read(arguments)  # redirect legacy to jina
-        elif tool_name == "plaza_get_new_posts":
-            result = await _plaza_get_new_posts(agent_id, arguments)
-        elif tool_name == "plaza_create_post":
-            result = await _plaza_create_post(agent_id, arguments)
-        elif tool_name == "plaza_add_comment":
-            result = await _plaza_add_comment(agent_id, arguments)
-        elif tool_name == "execute_code":
-            result = await _execute_code(ws, arguments)
-        elif tool_name == "upload_image":
-            result = await _upload_image(agent_id, ws, arguments)
-        elif tool_name == "discover_resources":
-            result = await _discover_resources(arguments)
-        elif tool_name == "import_mcp_server":
-            result = await _import_mcp_server(agent_id, arguments)
-        # ── Feishu Document Tools ──
-        elif tool_name == "feishu_wiki_list":
-            result = await _feishu_wiki_list(agent_id, arguments)
-        elif tool_name == "feishu_doc_read":
-            result = await _feishu_doc_read(agent_id, arguments)
-        elif tool_name == "feishu_doc_create":
-            result = await _feishu_doc_create(agent_id, arguments)
-        elif tool_name == "feishu_doc_append":
-            result = await _feishu_doc_append(agent_id, arguments)
-        # ── Feishu Calendar Tools ──
-        elif tool_name == "feishu_doc_share":
-            result = await _feishu_doc_share(agent_id, arguments)
-        elif tool_name == "feishu_user_search":
-            result = await _feishu_user_search(agent_id, arguments)
-        elif tool_name == "feishu_calendar_list":
-            result = await _feishu_calendar_list(agent_id, arguments)
-        elif tool_name == "feishu_calendar_create":
-            result = await _feishu_calendar_create(agent_id, arguments)
-        elif tool_name == "feishu_calendar_update":
-            result = await _feishu_calendar_update(agent_id, arguments)
-        elif tool_name == "feishu_calendar_delete":
-            result = await _feishu_calendar_delete(agent_id, arguments)
-        # ── Email Tools ──
-        elif tool_name in ("send_email", "read_emails", "reply_email"):
-            result = await _handle_email_tool(tool_name, agent_id, ws, arguments)
-        else:
-            # Try MCP tool execution
-            result = await _execute_mcp_tool(tool_name, arguments, agent_id=agent_id)
+        result = await asyncio.wait_for(
+            _execute_tool_inner(tool_name, arguments, agent_id, user_id, ws, _agent_tenant_id),
+            timeout=_tool_timeout,
+        )
 
         # Log tool call activity (skip noisy read operations)
         if tool_name not in ("list_files", "read_file", "read_document"):
@@ -1251,10 +1208,115 @@ async def execute_tool(
                 detail={"tool": tool_name, "args": {k: str(v)[:100] for k, v in arguments.items()}, "result": result[:300]},
             )
         return result
+    except asyncio.TimeoutError:
+        logger.warning("[Tool] %s timed out after %.0fs for agent %s", tool_name, _tool_timeout, agent_id)
+        return f"[Tool Timeout] {tool_name} exceeded {int(_tool_timeout)} second time limit. Try a simpler operation."
     except Exception as e:
         import traceback
         traceback.print_exc()
         return f"Tool execution error ({tool_name}): {type(e).__name__}: {str(e)[:200]}"
+
+
+async def _execute_tool_inner(
+    tool_name: str, arguments: dict, agent_id: uuid.UUID, user_id: uuid.UUID,
+    ws: str, _agent_tenant_id: str | None,
+) -> str:
+    """Inner tool dispatch — called with timeout wrapper from execute_tool()."""
+    if tool_name == "list_files":
+        result = _list_files(ws, arguments.get("path", ""), tenant_id=_agent_tenant_id)
+    elif tool_name == "read_file":
+        path = arguments.get("path")
+        if not path:
+            return "❌ Missing required argument 'path' for read_file"
+        result = _read_file(ws, path, tenant_id=_agent_tenant_id)
+    elif tool_name == "read_document":
+        path = arguments.get("path")
+        if not path:
+            return "❌ Missing required argument 'path' for read_document"
+        max_chars = min(int(arguments.get("max_chars", 8000)), 20000)
+        result = await _read_document(ws, path, max_chars=max_chars, tenant_id=_agent_tenant_id)
+    elif tool_name == "write_file":
+        path = arguments.get("path")
+        content = arguments.get("content")
+        if not path:
+            return "❌ Missing required argument 'path' for write_file. Please provide a file path like 'skills/my-skill/SKILL.md'"
+        if content is None:
+            return "❌ Missing required argument 'content' for write_file"
+        result = _write_file(ws, path, content)
+    elif tool_name == "delete_file":
+        result = _delete_file(ws, arguments.get("path", ""))
+    elif tool_name == "manage_tasks":
+        result = await _manage_tasks(agent_id, user_id, ws, arguments)
+    elif tool_name == "set_trigger":
+        result = await _handle_set_trigger(agent_id, arguments)
+    elif tool_name == "update_trigger":
+        result = await _handle_update_trigger(agent_id, arguments)
+    elif tool_name == "cancel_trigger":
+        result = await _handle_cancel_trigger(agent_id, arguments)
+    elif tool_name == "list_triggers":
+        result = await _handle_list_triggers(agent_id)
+    elif tool_name == "send_feishu_message":
+        result = await _send_feishu_message(agent_id, arguments)
+    elif tool_name == "send_web_message":
+        result = await _send_web_message(agent_id, arguments)
+    elif tool_name == "send_message_to_agent":
+        result = await _send_message_to_agent(agent_id, arguments)
+    elif tool_name == "send_channel_file":
+        result = await _send_channel_file(agent_id, ws, arguments)
+    elif tool_name == "web_search":
+        result = await _web_search(arguments)
+    elif tool_name == "jina_search":
+        result = await _jina_search(arguments)
+    elif tool_name == "bing_search":
+        result = await _jina_search(arguments)  # redirect legacy to jina
+    elif tool_name == "jina_read":
+        result = await _jina_read(arguments)
+    elif tool_name == "read_webpage":
+        result = await _jina_read(arguments)  # redirect legacy to jina
+    elif tool_name == "plaza_get_new_posts":
+        result = await _plaza_get_new_posts(agent_id, arguments)
+    elif tool_name == "plaza_create_post":
+        result = await _plaza_create_post(agent_id, arguments)
+    elif tool_name == "plaza_add_comment":
+        result = await _plaza_add_comment(agent_id, arguments)
+    elif tool_name == "execute_code":
+        result = await _execute_code(ws, arguments)
+    elif tool_name == "upload_image":
+        result = await _upload_image(agent_id, ws, arguments)
+    elif tool_name == "discover_resources":
+        result = await _discover_resources(arguments)
+    elif tool_name == "import_mcp_server":
+        result = await _import_mcp_server(agent_id, arguments)
+    # ── Feishu Document Tools ──
+    elif tool_name == "feishu_wiki_list":
+        result = await _feishu_wiki_list(agent_id, arguments)
+    elif tool_name == "feishu_doc_read":
+        result = await _feishu_doc_read(agent_id, arguments)
+    elif tool_name == "feishu_doc_create":
+        result = await _feishu_doc_create(agent_id, arguments)
+    elif tool_name == "feishu_doc_append":
+        result = await _feishu_doc_append(agent_id, arguments)
+    # ── Feishu Calendar Tools ──
+    elif tool_name == "feishu_doc_share":
+        result = await _feishu_doc_share(agent_id, arguments)
+    elif tool_name == "feishu_user_search":
+        result = await _feishu_user_search(agent_id, arguments)
+    elif tool_name == "feishu_calendar_list":
+        result = await _feishu_calendar_list(agent_id, arguments)
+    elif tool_name == "feishu_calendar_create":
+        result = await _feishu_calendar_create(agent_id, arguments)
+    elif tool_name == "feishu_calendar_update":
+        result = await _feishu_calendar_update(agent_id, arguments)
+    elif tool_name == "feishu_calendar_delete":
+        result = await _feishu_calendar_delete(agent_id, arguments)
+    # ── Email Tools ──
+    elif tool_name in ("send_email", "read_emails", "reply_email"):
+        result = await _handle_email_tool(tool_name, agent_id, ws, arguments)
+    else:
+        # Try MCP tool execution
+        result = await _execute_mcp_tool(tool_name, arguments, agent_id=agent_id)
+
+    return result
 
 
 async def _web_search(arguments: dict) -> str:

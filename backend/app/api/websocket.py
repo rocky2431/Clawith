@@ -525,10 +525,15 @@ async def call_llm(
             logger.debug(f"[LLM] Tool result: {result[:100]}")
 
             # Progressive tool loading: expand tool set when agent reads a skill file
-            if tool_name == "read_file" and "SKILL.md" in str(args.get("path", "")):
-                if _all_tools_cache is None:
+            # or after 3 rounds of tool calls (agent is actively working)
+            if _all_tools_cache is None:
+                _should_expand = (
+                    (tool_name == "read_file" and "SKILL.md" in str(args.get("path", "")))
+                    or round_i >= 2  # Auto-expand after 3rd round
+                )
+                if _should_expand:
                     _all_tools_cache = await get_agent_tools_for_llm(agent_id, core_only=False)
-                tools_for_llm = _all_tools_cache
+                    tools_for_llm = _all_tools_cache
 
             # Notify client about tool call result
             if on_tool_call:
@@ -766,7 +771,14 @@ async def websocket_chat(
 
         while True:
             logger.info(f"[WS] Waiting for message from {agent_name}...")
-            data = await websocket.receive_json()
+            import asyncio as _aio_idle
+            try:
+                data = await _aio_idle.wait_for(websocket.receive_json(), timeout=300)  # 5 min idle
+            except _aio_idle.TimeoutError:
+                logger.info(f"[WS] Idle timeout (5 min) for {agent_name}, closing")
+                await websocket.send_json({"type": "info", "content": "Connection closed due to inactivity. Reconnect to continue."})
+                await websocket.close(code=1000)
+                return
             content = data.get("content", "")
             display_content = data.get("display_content", "")  # User-facing display text
             file_name = data.get("file_name", "")  # Original file name for attachment display

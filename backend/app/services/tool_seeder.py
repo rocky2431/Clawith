@@ -833,6 +833,41 @@ BUILTIN_TOOLS = [
         "config": {},
         "config_schema": {},
     },
+    {
+        "name": "feishu_wiki_list",
+        "display_name": "Feishu Wiki List",
+        "description": "List Feishu wiki spaces and documents in a space.",
+        "category": "feishu",
+        "icon": "📚",
+        "is_default": False,
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "space_id": {"type": "string", "description": "Wiki space ID (optional, lists spaces if omitted)"},
+            },
+        },
+        "config": {},
+        "config_schema": {},
+    },
+    {
+        "name": "feishu_doc_share",
+        "display_name": "Feishu Doc Share",
+        "description": "Share a Feishu document with specified users by setting permissions.",
+        "category": "feishu",
+        "icon": "🔗",
+        "is_default": False,
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string", "description": "Document token to share"},
+                "user_emails": {"type": "array", "items": {"type": "string"}, "description": "List of email addresses to share with"},
+                "permission": {"type": "string", "enum": ["view", "edit"], "description": "Permission level", "default": "view"},
+            },
+            "required": ["document_id", "user_emails"],
+        },
+        "config": {},
+        "config_schema": {},
+    },
 ]
 
 

@@ -101,6 +101,28 @@ class AgentManager:
             hb_content = hb_template.read_text(encoding="utf-8") if hb_template.exists() else "# Heartbeat Instructions\n"
             hb_path.write_text(hb_content, encoding="utf-8")
 
+        # Ensure relationships.md exists — list other agents in the same tenant
+        rel_path = agent_dir / "relationships.md"
+        if not rel_path.exists():
+            rel_lines = ["# Relationships\n"]
+            try:
+                other_agents = await db.execute(
+                    select(Agent.name, Agent.role_description).where(
+                        Agent.tenant_id == agent.tenant_id,
+                        Agent.id != agent.id,
+                    )
+                )
+                peers = other_agents.all()
+                if peers:
+                    rel_lines.append("## Digital Employee Colleagues\n")
+                    for name, role in peers:
+                        rel_lines.append(f"- **{name}** (collaborator): {role or 'Digital assistant'}")
+                else:
+                    rel_lines.append("_No relationships configured yet._\n")
+            except Exception:
+                rel_lines.append("_No relationships configured yet._\n")
+            rel_path.write_text("\n".join(rel_lines), encoding="utf-8")
+
         # Customize state.json
         state_path = agent_dir / "state.json"
         if state_path.exists():
