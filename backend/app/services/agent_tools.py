@@ -873,7 +873,7 @@ async def _agent_has_feishu(agent_id: uuid.UUID) -> bool:
 CORE_TOOL_NAMES = {
     "list_files", "read_file", "write_file", "delete_file",
     "jina_search", "jina_read", "web_search",
-    "send_message_to_agent", "send_web_message",
+    "send_message_to_agent", "send_web_message", "send_channel_file",
     "set_trigger", "list_triggers",
     "read_document",
 }

@@ -217,6 +217,7 @@ async def build_agent_context(agent_id: uuid.UUID, agent_name: str, role_descrip
     # --- Company Intro (from system settings) ---
     try:
         from app.database import async_session
+        from app.models.agent import Agent as _AgentModel
         from app.models.system_settings import SystemSetting
         from sqlalchemy import select as sa_select
         async with async_session() as db:
