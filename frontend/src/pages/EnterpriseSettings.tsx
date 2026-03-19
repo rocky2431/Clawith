@@ -26,7 +26,7 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 
 interface LLMModel {
     id: string; provider: string; model: string; label: string;
-    base_url?: string; api_key_masked?: string; max_tokens_per_day?: number; enabled: boolean; supports_vision?: boolean; max_output_tokens?: number; created_at: string;
+    base_url?: string; api_key_masked?: string; max_tokens_per_day?: number; enabled: boolean; supports_vision?: boolean; max_output_tokens?: number; max_input_tokens?: number; created_at: string;
 }
 
 interface LLMProviderSpec {
@@ -1179,10 +1179,146 @@ function FeatureFlagsTab() {
 }
 
 
+// ─── Memory Tab ──────────────────────────────────────
+function MemoryTab({ models }: { models: LLMModel[] }) {
+    const { t } = useTranslation();
+    const [config, setConfig] = useState({
+        summary_model_id: '' as string,
+        compress_threshold: 70,
+        keep_recent: 10,
+        extract_to_viking: false,
+    });
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        fetchJson<any>('/enterprise/memory/config').then(d => {
+            if (d && Object.keys(d).length) {
+                setConfig(c => ({
+                    ...c,
+                    ...d,
+                    summary_model_id: d.summary_model_id || '',
+                }));
+            }
+            setLoaded(true);
+        }).catch(() => setLoaded(true));
+    }, []);
+
+    const saveConfig = async () => {
+        setSaving(true);
+        try {
+            await fetchJson('/enterprise/memory/config', {
+                method: 'PUT',
+                body: JSON.stringify({
+                    ...config,
+                    summary_model_id: config.summary_model_id || null,
+                }),
+            });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+        } catch (e: any) {
+            alert(e.message || 'Failed to save');
+        }
+        setSaving(false);
+    };
+
+    if (!loaded) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-tertiary)' }}>Loading...</div>;
+
+    return (
+        <div className="card">
+            <h3 style={{ marginBottom: '20px' }}>{t('enterprise.memory.title')}</h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Summary Model */}
+                <div className="form-group">
+                    <label className="form-label">{t('enterprise.memory.summaryModel')}</label>
+                    <select
+                        className="form-input"
+                        value={config.summary_model_id}
+                        onChange={e => setConfig(c => ({ ...c, summary_model_id: e.target.value }))}
+                    >
+                        <option value="">— {t('enterprise.memory.noModelSelected')} —</option>
+                        {models.filter(m => m.enabled).map(m => (
+                            <option key={m.id} value={m.id}>{m.label} ({m.provider}/{m.model})</option>
+                        ))}
+                    </select>
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        {t('enterprise.memory.summaryModelDesc')}
+                    </div>
+                </div>
+
+                {/* Compress Threshold */}
+                <div className="form-group">
+                    <label className="form-label">{t('enterprise.memory.compressThreshold')}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            className="form-input"
+                            type="number"
+                            min={30}
+                            max={95}
+                            value={config.compress_threshold}
+                            onChange={e => setConfig(c => ({ ...c, compress_threshold: Number(e.target.value) }))}
+                            style={{ width: '100px' }}
+                        />
+                        <span style={{ color: 'var(--text-secondary)' }}>%</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        {t('enterprise.memory.compressThresholdDesc')}
+                    </div>
+                </div>
+
+                {/* Keep Recent */}
+                <div className="form-group">
+                    <label className="form-label">{t('enterprise.memory.keepRecent')}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            className="form-input"
+                            type="number"
+                            min={2}
+                            max={50}
+                            value={config.keep_recent}
+                            onChange={e => setConfig(c => ({ ...c, keep_recent: Number(e.target.value) }))}
+                            style={{ width: '100px' }}
+                        />
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        {t('enterprise.memory.keepRecentDesc')}
+                    </div>
+                </div>
+
+                {/* Extract to Viking */}
+                <div className="form-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                        <input
+                            type="checkbox"
+                            checked={config.extract_to_viking}
+                            onChange={e => setConfig(c => ({ ...c, extract_to_viking: e.target.checked }))}
+                        />
+                        {t('enterprise.memory.extractToViking')}
+                    </label>
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        {t('enterprise.memory.extractToVikingDesc')}
+                    </div>
+                </div>
+
+                {/* Save */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
+                    {saved && <span style={{ color: 'var(--success)', fontSize: '13px' }}>{t('enterprise.memory.saved')}</span>}
+                    <button className="btn btn-primary" onClick={saveConfig} disabled={saving}>
+                        {saving ? '...' : t('common.save')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
 export default function EnterpriseSettings() {
     const { t } = useTranslation();
     const qc = useQueryClient();
-    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites'>('info');
+    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory'>('info');
 
     // OpenViking status for KB tab
     const { data: vikingStatus } = useQuery({
@@ -1347,7 +1483,7 @@ export default function EnterpriseSettings() {
     });
     const [showAddModel, setShowAddModel] = useState(false);
     const [editingModelId, setEditingModelId] = useState<string | null>(null);
-    const [modelForm, setModelForm] = useState({ provider: 'anthropic', model: '', api_key: '', base_url: '', label: '', supports_vision: false, max_output_tokens: '' as string });
+    const [modelForm, setModelForm] = useState({ provider: 'anthropic', model: '', api_key: '', base_url: '', label: '', supports_vision: false, max_output_tokens: '' as string, max_input_tokens: '' as string });
     const { data: providerSpecs = [] } = useQuery({
         queryKey: ['llm-provider-specs'],
         queryFn: () => fetchJson<LLMProviderSpec[]>('/enterprise/llm-providers'),
@@ -1430,7 +1566,7 @@ export default function EnterpriseSettings() {
                 </div>
 
                 <div className="tabs">
-                    {(['info', 'llm', 'tools', 'skills', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'flags'] as const).map(tab => (
+                    {(['info', 'llm', 'tools', 'skills', 'memory', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'flags'] as const).map(tab => (
                         <div key={tab} className={`tab ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>
                             {tab === 'quotas' ? t('enterprise.tabs.quotas', 'Quotas') : tab === 'users' ? t('enterprise.tabs.users', 'Users') : tab === 'invites' ? t('enterprise.tabs.invites', 'Invitations') : t(`enterprise.tabs.${tab}`, tab)}
                         </div>
@@ -1450,6 +1586,7 @@ export default function EnterpriseSettings() {
                                     base_url: defaultSpec?.default_base_url || '',
                                     label: '', supports_vision: false,
                                     max_output_tokens: defaultSpec ? String(defaultSpec.default_max_tokens) : '4096',
+                                    max_input_tokens: '',
                                 });
                                 setShowAddModel(true);
                             }}>+ {t('enterprise.llm.addModel')}</button>
@@ -1509,6 +1646,11 @@ export default function EnterpriseSettings() {
                                         <input className="form-input" type="number" placeholder="Provider default" value={modelForm.max_output_tokens} onChange={e => setModelForm({ ...modelForm, max_output_tokens: e.target.value })} />
                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Override the default output token limit. Auto-filled from provider; adjust as needed.</div>
                                     </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Max Input Tokens (Context Window)</label>
+                                        <input className="form-input" type="number" placeholder="Provider default" value={modelForm.max_input_tokens} onChange={e => setModelForm({ ...modelForm, max_input_tokens: e.target.value })} />
+                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Override the context window size. Used for conversation compression timing.</div>
+                                    </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
                                     <button className="btn btn-secondary" onClick={() => { setShowAddModel(false); setEditingModelId(null); }}>{t('common.cancel')}</button>
@@ -1539,7 +1681,7 @@ export default function EnterpriseSettings() {
                                         }
                                     }}>Test</button>
                                     <button className="btn btn-primary" onClick={() => {
-                                        const data = { ...modelForm, max_output_tokens: modelForm.max_output_tokens ? Number(modelForm.max_output_tokens) : null };
+                                        const data = { ...modelForm, max_output_tokens: modelForm.max_output_tokens ? Number(modelForm.max_output_tokens) : null, max_input_tokens: modelForm.max_input_tokens ? Number(modelForm.max_input_tokens) : null };
                                         addModel.mutate(data);
                                     }} disabled={!modelForm.model || !modelForm.api_key}>
                                         {t('common.save')}
@@ -1629,7 +1771,7 @@ export default function EnterpriseSettings() {
                                                     }
                                                 }}>Test</button>
                                                 <button className="btn btn-primary" onClick={() => {
-                                                    const data = { ...modelForm, max_output_tokens: modelForm.max_output_tokens ? Number(modelForm.max_output_tokens) : null };
+                                                    const data = { ...modelForm, max_output_tokens: modelForm.max_output_tokens ? Number(modelForm.max_output_tokens) : null, max_input_tokens: modelForm.max_input_tokens ? Number(modelForm.max_input_tokens) : null };
                                                     updateModel.mutate({ id: editingModelId!, data });
                                                 }} disabled={!modelForm.model}>
                                                     {t('common.save')}
@@ -1653,7 +1795,7 @@ export default function EnterpriseSettings() {
                                                 {m.supports_vision && <span className="badge" style={{ background: 'rgba(99,102,241,0.15)', color: 'rgb(99,102,241)', fontSize: '10px' }}>👁 Vision</span>}
                                                 <button className="btn btn-ghost" onClick={() => {
                                                     setEditingModelId(m.id);
-                                                    setModelForm({ provider: m.provider, model: m.model, label: m.label, base_url: m.base_url || '', api_key: m.api_key_masked || '', supports_vision: m.supports_vision || false, max_output_tokens: m.max_output_tokens ? String(m.max_output_tokens) : '' });
+                                                    setModelForm({ provider: m.provider, model: m.model, label: m.label, base_url: m.base_url || '', api_key: m.api_key_masked || '', supports_vision: m.supports_vision || false, max_output_tokens: m.max_output_tokens ? String(m.max_output_tokens) : '', max_input_tokens: m.max_input_tokens ? String(m.max_input_tokens) : '' });
                                                     setShowAddModel(true);
                                                 }} style={{ fontSize: '12px' }}>✏️ Edit</button>
                                                 <button className="btn btn-ghost" onClick={() => deleteModel.mutate({ id: m.id })} style={{ color: 'var(--error)' }}>{t('common.delete')}</button>
@@ -2244,6 +2386,9 @@ export default function EnterpriseSettings() {
                 {activeTab === 'skills' && <SkillsTab />}
 
                 {activeTab === 'flags' && <FeatureFlagsTab />}
+
+                {/* ── Memory Tab ── */}
+                {activeTab === 'memory' && <MemoryTab models={models} />}
 
                 {/* ── Invitation Codes Tab ── */}
                 {activeTab === 'invites' && <InvitationCodes />}

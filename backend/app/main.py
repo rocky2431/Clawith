@@ -306,6 +306,7 @@ from app.api.gateway import router as gateway_router
 from app.api.config_history import router as config_history_router
 from app.api.feature_flags import router as feature_flags_router
 from app.api.admin import router as admin_router
+from app.api.memory import router as memory_router
 
 # All API routers — mounted under both /api (backward compat) and /api/v1
 _api_routers = [
@@ -316,7 +317,7 @@ _api_routers = [
     skills_router, users_router, slack_router, discord_router, dingtalk_router,
     wecom_router, teams_router, atlassian_router, notification_router,
     gateway_router, config_history_router, feature_flags_router, admin_router,
-    chat_sessions_router, plaza_router, triggers_router,
+    chat_sessions_router, plaza_router, triggers_router, memory_router,
 ]
 
 for _r in _api_routers:

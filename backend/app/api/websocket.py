@@ -109,6 +109,7 @@ async def call_llm_via_engine(
     on_tool_call=None,
     on_thinking=None,
     supports_vision=False,
+    memory_context: str = "",
 ) -> str:
     """Call LLM via the middleware-based execution engine."""
     from app.services.agent_tools import get_agent_tools_for_llm, AGENT_TOOLS
@@ -162,6 +163,10 @@ async def call_llm_via_engine(
             if knowledge:
                 system_prompt += "\n\n" + knowledge
 
+    # Inject memory context (previous summary + agent memory)
+    if memory_context:
+        system_prompt += "\n\n" + memory_context
+
     # Build callbacks adapter (engine uses positional args, websocket uses dict)
     async def _tool_call_adapter(name: str, args: dict, status: str) -> None:
         if on_tool_call:
@@ -173,12 +178,14 @@ async def call_llm_via_engine(
         on_thinking=on_thinking,
     )
 
-    # Summarize old messages if conversation is too long
-    from app.services.conversation_summarizer import summarize_conversation
-    messages = await summarize_conversation(
+    # Compress old messages when approaching model context window
+    from app.services.memory_service import maybe_compress_messages as _compress
+    messages = await _compress(
         messages,
-        trigger_tokens=4000,
-        keep_recent=10,
+        model_provider=model.provider,
+        model_name=model.model,
+        max_input_tokens_override=getattr(model, 'max_input_tokens', None),
+        tenant_id=_tenant_id,
     )
 
     # Build execution state
@@ -229,6 +236,7 @@ async def call_llm(
     on_tool_call=None,
     on_thinking=None,
     supports_vision=False,
+    memory_context: str = "",
 ) -> str:
     """Call LLM via unified client with function-calling tool loop.
 
@@ -251,6 +259,7 @@ async def call_llm(
                         agent_id=agent_id, user_id=user_id,
                         on_chunk=on_chunk, on_tool_call=on_tool_call,
                         on_thinking=on_thinking, supports_vision=supports_vision,
+                        memory_context=memory_context,
                     )
         except Exception as e:
             logger.warning("Feature flag gate failed for agent %s, falling back to legacy: %s", agent_id, e)
@@ -289,25 +298,26 @@ async def call_llm(
             logger.debug("Suppressed: %s", e)
     system_prompt = await build_agent_context(agent_id, agent_name, role_description, current_user_name=_current_user_name)
 
+    # Resolve tenant for knowledge injection and memory compression
+    _call_tenant_id = None
+    if agent_id:
+        try:
+            async with async_session() as _kdb:
+                from app.models.agent import Agent as _KAgent
+                _kr = await _kdb.execute(select(_KAgent.tenant_id).where(_KAgent.id == agent_id))
+                _call_tenant_id = _kr.scalar_one_or_none()
+        except Exception as exc:
+            logger.debug("Failed to resolve tenant: %s", exc)
+
     # Inject relevant enterprise knowledge based on user's last message
-    if agent_id and messages:
+    if agent_id and messages and _call_tenant_id:
         last_user_msg = next(
             (m["content"] for m in reversed(messages) if m.get("role") == "user" and isinstance(m.get("content"), str)),
             None,
         )
         if last_user_msg:
             from app.services.knowledge_inject import fetch_relevant_knowledge
-
-            _inject_tenant = None
-            try:
-                async with async_session() as _kdb:
-                    from app.models.agent import Agent as _KAgent
-
-                    _kr = await _kdb.execute(select(_KAgent.tenant_id).where(_KAgent.id == agent_id))
-                    _inject_tenant = _kr.scalar_one_or_none()
-            except Exception as exc:
-                logger.debug("Failed to resolve tenant for knowledge injection: %s", exc)
-            knowledge = await fetch_relevant_knowledge(last_user_msg, tenant_id=_inject_tenant)
+            knowledge = await fetch_relevant_knowledge(last_user_msg, tenant_id=_call_tenant_id)
             if knowledge:
                 system_prompt += "\n\n" + knowledge
 
@@ -315,13 +325,19 @@ async def call_llm(
     tools_for_llm = await get_agent_tools_for_llm(agent_id, core_only=True) if agent_id else AGENT_TOOLS
     _all_tools_cache = None  # lazy-loaded full tool set
 
-    # Summarize old messages if conversation is too long
-    from app.services.conversation_summarizer import summarize_conversation
-    messages = await summarize_conversation(
+    # Compress old messages when approaching model context window
+    from app.services.memory_service import maybe_compress_messages
+    messages = await maybe_compress_messages(
         messages,
-        trigger_tokens=4000,
-        keep_recent=10,
+        model_provider=model.provider,
+        model_name=model.model,
+        max_input_tokens_override=getattr(model, 'max_input_tokens', None),
+        tenant_id=_call_tenant_id,
     )
+
+    # Inject memory context (previous summary + agent memory) into system prompt
+    if memory_context:
+        system_prompt += "\n\n" + memory_context
 
     # Convert messages to LLMMessage format
     api_messages = [LLMMessage(role="system", content=system_prompt)]
@@ -694,6 +710,14 @@ async def websocket_chat(
     manager.active_connections[agent_id_str].append((websocket, conv_id))
     logger.info(f"[WS] Ready! Agent={agent_name}")
 
+    # Load memory context (previous summary + agent memory) for injection into system prompt
+    _memory_context = ""
+    try:
+        from app.services.memory_service import on_conversation_start
+        _memory_context = await on_conversation_start(agent_id, conv_id, agent.tenant_id)
+    except Exception as _mem_err:
+        logger.debug("[WS] Memory context load failed (non-fatal): %s", _mem_err)
+
     # Build conversation context from history
     # IMPORTANT: Include tool_call messages so the LLM maintains tool-calling behavior.
     # Without them, Claude sees user→assistant-text patterns and learns to skip tools.
@@ -897,6 +921,7 @@ async def websocket_chat(
                         on_tool_call=tool_call_to_ws,
                         on_thinking=thinking_to_ws,
                         supports_vision=getattr(llm_model, 'supports_vision', False),
+                        memory_context=_memory_context,
                     ))
 
                     # Listen for abort while LLM is running
@@ -977,6 +1002,7 @@ async def websocket_chat(
                                 on_tool_call=tool_call_to_ws,
                                 on_thinking=thinking_to_ws,
                                 supports_vision=getattr(fallback_llm_model, 'supports_vision', False),
+                                memory_context=_memory_context,
                             )
                             logger.info(f"[WS] Fallback LLM response: {assistant_response[:80]}")
                         except Exception as e2:
@@ -1042,6 +1068,21 @@ async def websocket_chat(
     except WebSocketDisconnect:
         logger.info(f"[WS] Client disconnected: {agent_name}")
         manager.disconnect(agent_id_str, websocket)
+        # Background knowledge extraction (fire-and-forget, non-blocking)
+        if conversation and len(conversation) >= 4:
+            import asyncio as _aio_dc
+            from app.services.memory_service import on_conversation_end
+
+            def _mem_task_done(t):
+                try:
+                    t.result()
+                except Exception as _e:
+                    logger.warning("[WS] Memory extraction failed: %s", _e)
+
+            _mem_task = _aio_dc.create_task(on_conversation_end(
+                agent_id, conv_id, agent.tenant_id, conversation
+            ))
+            _mem_task.add_done_callback(_mem_task_done)
     except Exception as e:
         logger.error(f"[WS] Error in message loop: {type(e).__name__}: {e}")
         import traceback

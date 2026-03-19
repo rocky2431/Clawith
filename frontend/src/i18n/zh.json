@@ -606,7 +606,21 @@
       "quotas": "配额",
       "users": "用户",
       "flags": "功能开关",
-      "invites": "邀请码"
+      "invites": "邀请码",
+      "memory": "记忆"
+    },
+    "memory": {
+      "title": "记忆与摘要",
+      "summaryModel": "摘要模型",
+      "summaryModelDesc": "用于对话压缩和知识提取的模型。推荐选择快速便宜的模型。",
+      "noModelSelected": "未选择模型 — 将使用文本提取（质量较低）",
+      "compressThreshold": "压缩阈值",
+      "compressThresholdDesc": "消息占模型上下文窗口此比例时触发压缩",
+      "keepRecent": "保留最近消息数",
+      "keepRecentDesc": "压缩时始终保留最近 N 条消息不压缩",
+      "extractToViking": "共享知识到组织",
+      "extractToVikingDesc": "对话摘要写入 OpenViking，其他员工也能检索",
+      "saved": "记忆配置已保存"
     },
     "flags": {
       "title": "功能开关",

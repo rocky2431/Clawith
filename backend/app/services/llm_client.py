@@ -1601,6 +1601,7 @@ class ProviderSpec:
     default_base_url: str | None
     supports_tool_choice: bool = True
     default_max_tokens: int = 4096
+    max_input_tokens: int = 128000
     model_max_tokens: dict[str, int] = field(default_factory=dict)
 
 
@@ -1620,6 +1621,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         default_base_url="https://api.anthropic.com",
         supports_tool_choice=False,
         default_max_tokens=8192,
+        max_input_tokens=200000,
     ),
     "openai": ProviderSpec(
         provider="openai",
@@ -1627,6 +1629,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://api.openai.com/v1",
         default_max_tokens=16384,
+        max_input_tokens=128000,
     ),
     "openai-response": ProviderSpec(
         provider="openai-response",
@@ -1634,6 +1637,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_responses",
         default_base_url="https://api.openai.com/v1",
         default_max_tokens=16384,
+        max_input_tokens=128000,
     ),
     "azure": ProviderSpec(
         provider="azure",
@@ -1641,6 +1645,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url=None,
         default_max_tokens=16384,
+        max_input_tokens=128000,
     ),
     "deepseek": ProviderSpec(
         provider="deepseek",
@@ -1648,6 +1653,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://api.deepseek.com/v1",
         default_max_tokens=8192,
+        max_input_tokens=64000,
     ),
     "qwen": ProviderSpec(
         provider="qwen",
@@ -1655,6 +1661,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         default_max_tokens=8192,
+        max_input_tokens=131072,
         model_max_tokens={
             "qwen-plus": 16384,
             "qwen-long": 16384,
@@ -1668,6 +1675,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://api.minimaxi.com/v1",
         default_max_tokens=16384,
+        max_input_tokens=128000,
     ),
     "openrouter": ProviderSpec(
         provider="openrouter",
@@ -1675,6 +1683,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://openrouter.ai/api/v1",
         default_max_tokens=4096,
+        max_input_tokens=128000,
     ),
     "zhipu": ProviderSpec(
         provider="zhipu",
@@ -1682,6 +1691,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://open.bigmodel.cn/api/paas/v4",
         default_max_tokens=8192,
+        max_input_tokens=128000,
     ),
     "gemini": ProviderSpec(
         provider="gemini",
@@ -1689,6 +1699,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="gemini",
         default_base_url="https://generativelanguage.googleapis.com/v1beta",
         default_max_tokens=8192,
+        max_input_tokens=1048576,
     ),
     "kimi": ProviderSpec(
         provider="kimi",
@@ -1696,6 +1707,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="https://api.moonshot.cn/v1",
         default_max_tokens=8192,
+        max_input_tokens=128000,
     ),
     "vllm": ProviderSpec(
         provider="vllm",
@@ -1703,6 +1715,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="http://localhost:8000/v1",
         default_max_tokens=4096,
+        max_input_tokens=32000,
     ),
     "ollama": ProviderSpec(
         provider="ollama",
@@ -1710,6 +1723,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="http://localhost:11434/v1",
         default_max_tokens=4096,
+        max_input_tokens=32000,
     ),
     "sglang": ProviderSpec(
         provider="sglang",
@@ -1717,6 +1731,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url="http://localhost:30000/v1",
         default_max_tokens=4096,
+        max_input_tokens=32000,
     ),
     "custom": ProviderSpec(
         provider="custom",
@@ -1724,6 +1739,7 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
         protocol="openai_compatible",
         default_base_url=None,
         default_max_tokens=4096,
+        max_input_tokens=128000,
     ),
 }
 
@@ -1750,6 +1766,7 @@ def get_provider_manifest() -> list[dict[str, Any]]:
             "default_base_url": spec.default_base_url,
             "supports_tool_choice": spec.supports_tool_choice,
             "default_max_tokens": spec.default_max_tokens,
+            "max_input_tokens": spec.max_input_tokens,
             "model_max_tokens": spec.model_max_tokens,
             "aliases": [k for k, v in PROVIDER_ALIASES.items() if v == spec.provider],
         })

@@ -593,7 +593,21 @@
       "skills": "Skills",
       "quotas": "Quotas",
       "users": "Users",
-      "flags": "Feature Flags"
+      "flags": "Feature Flags",
+      "memory": "Memory"
+    },
+    "memory": {
+      "title": "Memory & Summarization",
+      "summaryModel": "Summary Model",
+      "summaryModelDesc": "Model for conversation compression and knowledge extraction. A fast, cheap model is recommended.",
+      "noModelSelected": "No model selected — will use text extraction (lower quality)",
+      "compressThreshold": "Compression Threshold",
+      "compressThresholdDesc": "Compress when messages reach this % of model context window",
+      "keepRecent": "Keep Recent Messages",
+      "keepRecentDesc": "Always keep this many recent messages uncompressed",
+      "extractToViking": "Share Knowledge to Organization",
+      "extractToVikingDesc": "Write conversation summaries to OpenViking for cross-agent retrieval",
+      "saved": "Memory configuration saved"
     },
     "flags": {
       "title": "Feature Flags",

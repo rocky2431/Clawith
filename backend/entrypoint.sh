@@ -75,6 +75,9 @@ async def main():
         "ALTER TABLE agents ADD COLUMN IF NOT EXISTS security_zone VARCHAR(30) DEFAULT 'standard'",
         # Fix security_audit_events sequence_num — make nullable (no PG sequence for non-PK)
         "ALTER TABLE security_audit_events ALTER COLUMN sequence_num DROP NOT NULL",
+        # Memory service: session summary + model context window
+        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary TEXT",
+        "ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS max_input_tokens INTEGER",
     ]
 
     from sqlalchemy import text

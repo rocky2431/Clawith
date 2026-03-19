@@ -130,6 +130,7 @@ async def add_llm_model(
         enabled=data.enabled,
         supports_vision=data.supports_vision,
         max_output_tokens=data.max_output_tokens,
+        max_input_tokens=data.max_input_tokens,
         tenant_id=uuid.UUID(tid) if tid else None,
     )
     db.add(model)
@@ -231,6 +232,8 @@ async def update_llm_model(
             model.supports_vision = data.supports_vision
         if hasattr(data, 'max_output_tokens') and data.max_output_tokens is not None:
             model.max_output_tokens = data.max_output_tokens
+        if hasattr(data, 'max_input_tokens') and data.max_input_tokens is not None:
+            model.max_input_tokens = data.max_input_tokens
 
         try:
             from app.core.policy import write_audit_event

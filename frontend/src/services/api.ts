@@ -313,6 +313,11 @@ export const enterpriseApi = {
 
     openvikingStatus: () =>
         request<{ connected: boolean; version?: string; reason?: string }>('/enterprise/knowledge-base/openviking-status'),
+
+    // Memory configuration
+    memoryConfig: () => request<any>('/enterprise/memory/config'),
+    updateMemoryConfig: (data: any) =>
+        request<any>('/enterprise/memory/config', { method: 'PUT', body: JSON.stringify(data) }),
 };
 
 // ─── Feature Flags ────────────────────────────────────
