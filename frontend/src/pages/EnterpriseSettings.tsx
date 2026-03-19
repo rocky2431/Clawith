@@ -1968,7 +1968,7 @@ export default function EnterpriseSettings() {
                     <div>
                         {/* Sub-tab pills */}
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
-                            {([['global', 'Global Tools'], ['agent-installed', 'Agent-installed']] as const).map(([key, label]) => (
+                            {([['global', t('enterprise.tools.globalTools')], ['agent-installed', t('enterprise.tools.agentInstalled')]] as const).map(([key, label]) => (
                                 <button key={key} onClick={() => { setToolsView(key as any); if (key === 'agent-installed') loadAgentInstalledTools(); }} style={{
                                     padding: '4px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', border: 'none',
                                     background: toolsView === key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
@@ -1980,9 +1980,9 @@ export default function EnterpriseSettings() {
                         {/* Agent-Installed Tools */}
                         {toolsView === 'agent-installed' && (
                             <div>
-                                <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>Tools installed by agents via <code>import_mcp_server</code>. Deleting removes the tool from that agent.</p>
+                                <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('enterprise.tools.agentInstalledDesc')}</p>
                                 {agentInstalledTools.length === 0 ? (
-                                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>No agent-installed tools yet.</div>
+                                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>{t('enterprise.tools.noAgentInstalled')}</div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         {agentInstalledTools.map((row: any) => (
@@ -1990,22 +1990,22 @@ export default function EnterpriseSettings() {
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                         <span style={{ fontWeight: 500, fontSize: '13px' }}>🔌 {row.tool_display_name}</span>
-                                                        {row.mcp_server_name && <span style={{ fontSize: '10px', background: 'var(--primary)', color: '#fff', borderRadius: '4px', padding: '1px 5px' }}>MCP</span>}
+                                                        {row.mcp_server_name && <span style={{ fontSize: '10px', background: 'var(--primary)', color: '#fff', borderRadius: '4px', padding: '1px 5px' }}>{t('enterprise.tools.mcp')}</span>}
                                                     </div>
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                                                        🤖 {row.installed_by_agent_name || 'Unknown Agent'}
+                                                        🤖 {row.installed_by_agent_name || t('enterprise.tools.unknownAgent')}
                                                         {row.installed_at && <span> · {new Date(row.installed_at).toLocaleString()}</span>}
                                                     </div>
                                                 </div>
                                                 <button className="btn btn-ghost" style={{ color: 'var(--error)', fontSize: '12px' }} onClick={async () => {
-                                                    if (!confirm(`Remove "${row.tool_display_name}" from agent?`)) return;
+                                                    if (!confirm(t('enterprise.tools.confirmRemove', { name: row.tool_display_name }))) return;
                                                     try {
                                                         await fetchJson(`/tools/agent-tool/${row.agent_tool_id}`, { method: 'DELETE' });
                                                     } catch {
                                                         // Already deleted (e.g. removed via Global Tools) — just refresh
                                                     }
                                                     loadAgentInstalledTools();
-                                                }}>🗑️ Delete</button>
+                                                }}>{t('common.delete')}</button>
                                             </div>
                                         ))}
                                     </div>
@@ -2016,15 +2016,15 @@ export default function EnterpriseSettings() {
                         {toolsView === 'global' && <>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <h3>{t('enterprise.tools.title')}</h3>
-                                <button className="btn btn-primary" onClick={() => setShowAddMCP(true)}>+ MCP Server</button>
+                                <button className="btn btn-primary" onClick={() => setShowAddMCP(true)}>{t('enterprise.tools.addMcp')}</button>
                             </div>
 
                             {showAddMCP && (
                                 <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
-                                    <h4 style={{ marginBottom: '12px' }}>MCP Server</h4>
+                                    <h4 style={{ marginBottom: '12px' }}>{t('enterprise.tools.mcpServer')}</h4>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                         <div>
-                                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>JSON Config</label>
+                                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>{t('enterprise.tools.jsonConfig')}</label>
                                             <textarea className="form-input" value={mcpRawInput} onChange={e => {
                                                 const val = e.target.value;
                                                 setMcpRawInput(val);
@@ -2047,14 +2047,14 @@ export default function EnterpriseSettings() {
                                         </div>
                                         {mcpForm.server_name && (
                                             <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--text-secondary)', padding: '8px 12px', background: 'var(--bg-tertiary)', borderRadius: '6px' }}>
-                                                <span>Name: <strong>{mcpForm.server_name}</strong></span>
-                                                <span>URL: <strong>{mcpForm.server_url}</strong></span>
+                                                <span>{t('enterprise.tools.name')}<strong>{mcpForm.server_name}</strong></span>
+                                                <span>{t('enterprise.tools.url')}<strong>{mcpForm.server_url}</strong></span>
                                             </div>
                                         )}
                                         {!mcpForm.server_name && (
                                             <div>
                                                 <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>{t('enterprise.tools.mcpServerName')}</label>
-                                                <input className="form-input" value={mcpForm.server_name} onChange={e => setMcpForm(p => ({ ...p, server_name: e.target.value }))} placeholder="My MCP Server" />
+                                                <input className="form-input" value={mcpForm.server_name} onChange={e => setMcpForm(p => ({ ...p, server_name: e.target.value }))} placeholder={t('enterprise.tools.mcpPlaceholder')} />
                                             </div>
                                         )}
                                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -2123,9 +2123,9 @@ export default function EnterpriseSettings() {
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                             <span style={{ fontWeight: 500, fontSize: '13px' }}>{tool.display_name}</span>
                                                             <span style={{ fontSize: '10px', background: tool.type === 'mcp' ? 'var(--primary)' : 'var(--bg-tertiary)', color: tool.type === 'mcp' ? '#fff' : 'var(--text-secondary)', borderRadius: '4px', padding: '1px 5px' }}>
-                                                                {tool.type === 'mcp' ? 'MCP' : 'Built-in'}
+                                                                {tool.type === 'mcp' ? t('enterprise.tools.mcp') : t('enterprise.tools.builtin')}
                                                             </span>
-                                                            {tool.is_default && <span style={{ fontSize: '10px', background: 'rgba(0,200,100,0.15)', color: 'var(--success)', borderRadius: '4px', padding: '1px 5px' }}>Default</span>}
+                                                            {tool.is_default && <span style={{ fontSize: '10px', background: 'rgba(0,200,100,0.15)', color: 'var(--success)', borderRadius: '4px', padding: '1px 5px' }}>{t('enterprise.tools.default')}</span>}
                                                         </div>
                                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                                                             {tool.description?.slice(0, 60)}

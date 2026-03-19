@@ -417,7 +417,13 @@
     },
     "tools": {
       "platformTools": "平台预置工具",
-      "agentInstalled": "Agent 自行安装的工具"
+      "agentInstalled": "Agent 自行安装的工具",
+      "saveFailed": "保存失败：",
+      "deleteFailed": "删除失败",
+      "testing": "测试中...",
+      "testConnection": "测试连接",
+      "resetToGlobal": "恢复全局默认",
+      "useGlobalDefault": "留空则使用全局默认值"
     },
     "toolCategories": {
       "file": "文件操作",
@@ -426,7 +432,12 @@
       "search": "搜索",
       "custom": "自定义",
       "general": "通用",
-      "email": "邮件"
+      "email": "邮件",
+      "aware": "感知与触发器",
+      "social": "社交",
+      "code": "代码与执行",
+      "discovery": "发现",
+      "feishu": "飞书"
     },
     "upload": {
       "success": "上传成功",
@@ -628,6 +639,21 @@
     },
     "tools": {
       "title": "全局工具管理",
+      "globalTools": "全局工具",
+      "agentInstalled": "员工已安装",
+      "agentInstalledDesc": "员工通过 import_mcp_server 安装的工具。删除将从该员工中移除此工具。",
+      "noAgentInstalled": "暂无员工安装的工具",
+      "mcp": "MCP",
+      "builtin": "内置",
+      "default": "默认",
+      "unknownAgent": "未知员工",
+      "addMcp": "+ MCP 服务器",
+      "mcpServer": "MCP 服务器",
+      "jsonConfig": "JSON 配置",
+      "name": "名称：",
+      "url": "地址：",
+      "mcpPlaceholder": "我的 MCP 服务器",
+      "confirmRemove": "从员工中移除「{{name}}」？",
       "testConnection": "测试连接",
       "testing": "测试中...",
       "connectionSuccess": "连接成功！发现 {{count}} 个工具",
@@ -812,7 +838,12 @@
     "search": "搜索",
     "feishu": "飞书",
     "custom": "自定义",
-    "mcp": "MCP 工具"
+    "mcp": "MCP 工具",
+    "email": "邮件",
+    "aware": "感知与触发器",
+    "social": "社交",
+    "code": "代码与执行",
+    "discovery": "发现"
   },
   "agentDetail": {
     "actions24h": "24h 活动",

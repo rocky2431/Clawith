@@ -148,7 +148,7 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
             });
             setConfigTool(null);
             loadTools();
-        } catch (e) { alert('Save failed: ' + e); }
+        } catch (e) { alert(t('agent.tools.saveFailed') + e); }
         setConfigSaving(false);
     };
 
@@ -218,8 +218,8 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                                         headers: { Authorization: `Bearer ${token}` },
                                                     });
                                                     if (res.ok) await loadTools();
-                                                    else alert('Delete failed');
-                                                } catch (e) { alert('Delete failed: ' + e); }
+                                                    else alert(t('agent.tools.deleteFailed'));
+                                                } catch (e) { alert(t('agent.tools.deleteFailed') + ': ' + e); }
                                                 setDeletingToolId(null);
                                             }}
                                             disabled={deletingToolId === tool.id}
@@ -343,7 +343,7 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                             </label>
                                             {field.type === 'password' ? (
                                                 <>
-                                                <input type="password" className="form-input" value={configData[field.key] ?? ''} placeholder={field.placeholder || 'Leave blank to use global default'} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))} />
+                                                <input type="password" className="form-input" value={configData[field.key] ?? ''} placeholder={field.placeholder || t('agent.tools.useGlobalDefault')} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))} />
                                                 {/* Per-provider help text for auth_code */}
                                                 {field.key === 'auth_code' && (() => {
                                                     const providerField = configTool.config_schema?.fields?.find((f: any) => f.key === 'email_provider');
@@ -367,7 +367,7 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                             ) : field.type === 'number' ? (
                                                 <input type="number" className="form-input" value={configData[field.key] ?? field.default ?? ''} placeholder={field.placeholder || ''} min={field.min} max={field.max} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value ? Number(e.target.value) : '' }))} />
                                             ) : (
-                                                <input type="text" className="form-input" value={configData[field.key] ?? ''} placeholder={field.placeholder || 'Leave blank to use global default'} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))} />
+                                                <input type="text" className="form-input" value={configData[field.key] ?? ''} placeholder={field.placeholder || t('agent.tools.useGlobalDefault')} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))} />
                                             )}
                                         </div>
                                     ))}
@@ -380,7 +380,7 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                             onClick={async () => {
                                                 const btn = document.getElementById('email-test-btn');
                                                 const status = document.getElementById('email-test-status');
-                                                if (btn) btn.textContent = 'Testing...';
+                                                if (btn) btn.textContent = t('agent.tools.testing');
                                                 if (btn) (btn as HTMLButtonElement).disabled = true;
                                                 try {
                                                     const token = localStorage.getItem('token');
@@ -399,11 +399,11 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                                 } catch (e: any) {
                                                     if (status) { status.textContent = `Error: ${e.message}`; status.style.color = 'var(--error)'; }
                                                 } finally {
-                                                    if (btn) { btn.textContent = 'Test Connection'; (btn as HTMLButtonElement).disabled = false; }
+                                                    if (btn) { btn.textContent = t('agent.tools.testConnection'); (btn as HTMLButtonElement).disabled = false; }
                                                 }
                                             }}
                                             id="email-test-btn"
-                                        >Test Connection</button>
+                                        >{t('agent.tools.testConnection')}</button>
                                         <div id="email-test-status" style={{ fontSize: '11px', whiteSpace: 'pre-line', minHeight: '16px' }}></div>
                                     </div>
                                 )}
@@ -430,10 +430,10 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                     const token = localStorage.getItem('token');
                                     await fetch(`/api/v1/tools/agents/${agentId}/tool-config/${configTool.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ config: {} }) });
                                     setConfigTool(null); loadTools();
-                                }}>Reset to Global</button>
+                                }}>{t('agent.tools.resetToGlobal')}</button>
                             )}
-                            <button className="btn btn-secondary" onClick={() => setConfigTool(null)}>Cancel</button>
-                            <button className="btn btn-primary" onClick={saveConfig} disabled={configSaving}>{configSaving ? 'Saving…' : 'Save'}</button>
+                            <button className="btn btn-secondary" onClick={() => setConfigTool(null)}>{t('common.cancel')}</button>
+                            <button className="btn btn-primary" onClick={saveConfig} disabled={configSaving}>{configSaving ? t('agent.soul.saving') : t('common.save')}</button>
                         </div>
                     </div>
                 </div>
