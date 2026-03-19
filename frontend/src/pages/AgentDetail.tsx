@@ -181,7 +181,7 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                     <span style={{ fontSize: '18px' }}>{tool.icon}</span>
                                     <div style={{ minWidth: 0 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{tool.display_name}</span>
+                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{t(`tools.names.${tool.name}`, tool.display_name) as string}</span>
                                             {tool.type === 'mcp' && (
                                                 <span style={{ fontSize: '10px', background: 'var(--primary)', color: '#fff', borderRadius: '4px', padding: '1px 5px' }}>MCP</span>
                                             )}
@@ -193,7 +193,7 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                                             )}
                                         </div>
                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {tool.description}
+                                            {t(`tools.descriptions.${tool.name}`, tool.description) as string}
                                             {tool.mcp_server_name && <span> · {tool.mcp_server_name}</span>}
                                         </div>
                                     </div>

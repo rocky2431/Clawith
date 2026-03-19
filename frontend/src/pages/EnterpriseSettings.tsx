@@ -2121,14 +2121,14 @@ export default function EnterpriseSettings() {
                                                     <span style={{ fontSize: '20px' }}>{tool.icon}</span>
                                                     <div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{tool.display_name}</span>
+                                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{t(`tools.names.${tool.name}`, tool.display_name) as string}</span>
                                                             <span style={{ fontSize: '10px', background: tool.type === 'mcp' ? 'var(--primary)' : 'var(--bg-tertiary)', color: tool.type === 'mcp' ? '#fff' : 'var(--text-secondary)', borderRadius: '4px', padding: '1px 5px' }}>
                                                                 {tool.type === 'mcp' ? t('enterprise.tools.mcp') : t('enterprise.tools.builtin')}
                                                             </span>
                                                             {tool.is_default && <span style={{ fontSize: '10px', background: 'rgba(0,200,100,0.15)', color: 'var(--success)', borderRadius: '4px', padding: '1px 5px' }}>{t('enterprise.tools.default')}</span>}
                                                         </div>
                                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                                                            {tool.description?.slice(0, 60)}
+                                                            {(t(`tools.descriptions.${tool.name}`, tool.description) as string)?.slice(0, 60)}
                                                             {tool.mcp_server_name && <span> · {tool.mcp_server_name}</span>}
                                                         </div>
                                                     </div>

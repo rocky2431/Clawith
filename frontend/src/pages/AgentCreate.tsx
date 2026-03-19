@@ -772,10 +772,10 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                                     <div style={{ fontSize: '16px' }}>{tool.icon}</div>
                                                     <div style={{ flex: 1 }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{tool.display_name}</span>
+                                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{t(`tools.names.${tool.name}`, tool.display_name) as string}</span>
                                                             {isDefault && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>{t('common.default', 'Default')}</span>}
                                                         </div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{tool.description}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t(`tools.descriptions.${tool.name}`, tool.description) as string}</div>
                                                     </div>
                                                 </label>
                                             );
