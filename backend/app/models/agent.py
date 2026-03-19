@@ -42,7 +42,7 @@ class Agent(Base):
 
     # Runtime
     status: Mapped[str] = mapped_column(
-        Enum("creating", "running", "idle", "stopped", "error", name="agent_status_enum", create_constraint=False),
+        Enum("draft", "creating", "running", "idle", "stopped", "error", name="agent_status_enum", create_constraint=False),
         default="creating",
         nullable=False,
     )
