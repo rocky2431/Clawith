@@ -16,7 +16,7 @@ class SecurityAuditEvent(Base):
     __tablename__ = "security_audit_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    sequence_num: Mapped[int] = mapped_column(BigInteger, autoincrement=True, unique=True)
+    sequence_num: Mapped[int | None] = mapped_column(BigInteger, server_default=None, unique=True, nullable=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     severity: Mapped[str] = mapped_column(String(10), nullable=False, default="info")
     actor_type: Mapped[str] = mapped_column(String(20), nullable=False)

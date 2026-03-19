@@ -129,10 +129,9 @@ async def write_audit_event(
     from app.models.security_audit import SecurityAuditEvent
 
     # Get previous hash for chain
-    from sqlalchemy import func
     result = await db.execute(
         select(SecurityAuditEvent.event_hash)
-        .order_by(SecurityAuditEvent.sequence_num.desc())
+        .order_by(SecurityAuditEvent.created_at.desc())
         .limit(1)
     )
     prev_hash = result.scalar_one_or_none() or "genesis"
