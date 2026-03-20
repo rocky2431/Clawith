@@ -939,6 +939,8 @@ CORE_TOOL_NAMES = {
     "send_message_to_agent", "send_web_message", "send_channel_file",
     "set_trigger", "list_triggers",
     "read_document",
+    "discover_resources", "import_mcp_server",
+    "execute_code",
 }
 
 
