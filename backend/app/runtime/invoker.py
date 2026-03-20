@@ -24,7 +24,7 @@ from app.runtime.prompt_builder import build_runtime_prompt
 from app.runtime.session import SessionContext
 from app.skills import SkillParser, SkillRegistry, WorkspaceSkillLoader
 from app.services.agent_context import build_agent_context
-from app.services.agent_tools import AGENT_TOOLS, execute_tool, get_agent_tools_for_llm
+from app.services.agent_tools import AGENT_TOOLS, CORE_TOOL_NAMES, execute_tool, get_agent_tools_for_llm
 from app.services.knowledge_inject import fetch_relevant_knowledge
 from app.services.llm_utils import LLMMessage, create_llm_client, get_max_tokens
 from app.services.memory_service import (
@@ -38,7 +38,7 @@ from app.services.token_tracker import (
     record_token_usage,
 )
 from app.tools import ensure_workspace
-from app.tools.packs import TOOL_PACKS
+from app.tools.packs import TOOL_PACKS, pack_for_name
 
 logger = logging.getLogger(__name__)
 
@@ -237,13 +237,36 @@ def _serialize_pack(pack) -> dict[str, Any]:
     }
 
 
-def _infer_active_packs(tool_names: list[str], *, skill_name: str | None = None) -> list[dict[str, Any]]:
+def _tool_names_from_openai_tools(tools: list[dict]) -> list[str]:
+    return [
+        tool["function"]["name"]
+        for tool in tools
+        if tool.get("type") == "function"
+        and tool.get("function", {}).get("name")
+        and tool["function"]["name"] not in CORE_TOOL_NAMES
+    ]
+
+
+def _infer_active_packs(
+    tool_names: list[str],
+    *,
+    skill_name: str | None = None,
+    declared_pack_names: list[str] | None = None,
+) -> list[dict[str, Any]]:
     requested = set(tool_names)
     packs = [
         _serialize_pack(pack)
         for pack in TOOL_PACKS
         if requested.intersection(pack.tools)
     ]
+    existing_names = {pack["name"] for pack in packs}
+    for pack_name in declared_pack_names or []:
+        if pack_name in existing_names:
+            continue
+        pack = pack_for_name(pack_name)
+        if pack:
+            packs.append(_serialize_pack(pack))
+            existing_names.add(pack_name)
     if packs or not requested:
         return packs
     synthetic_name = f"skill:{(skill_name or 'custom').strip().lower().replace(' ', '_')}"
@@ -276,7 +299,10 @@ async def _resolve_tool_expansion(
                 "read_mcp_resource",
             ],
         )
-        packs = _infer_active_packs(["discover_resources", "import_mcp_server", "list_mcp_resources", "read_mcp_resource"])
+        expanded_tool_names = _tool_names_from_openai_tools(tools)
+        if not expanded_tool_names:
+            return None
+        packs = _infer_active_packs(expanded_tool_names)
         return ToolExpansionResult(
             tools=tools,
             active_packs=packs,
@@ -310,7 +336,14 @@ async def _resolve_tool_expansion(
             core_only=False,
             requested_names=list(skill.metadata.declared_tools),
         )
-        packs = _infer_active_packs(list(skill.metadata.declared_tools), skill_name=skill.metadata.name)
+        expanded_tool_names = _tool_names_from_openai_tools(tools)
+        if not expanded_tool_names:
+            return None
+        packs = _infer_active_packs(
+            expanded_tool_names,
+            skill_name=skill.metadata.name,
+            declared_pack_names=list(skill.metadata.declared_packs),
+        )
         return ToolExpansionResult(
             tools=tools,
             active_packs=packs,
@@ -344,7 +377,14 @@ async def _resolve_tool_expansion(
             core_only=False,
             requested_names=list(parsed.metadata.declared_tools),
         )
-        packs = _infer_active_packs(list(parsed.metadata.declared_tools), skill_name=parsed.metadata.name)
+        expanded_tool_names = _tool_names_from_openai_tools(tools)
+        if not expanded_tool_names:
+            return None
+        packs = _infer_active_packs(
+            expanded_tool_names,
+            skill_name=parsed.metadata.name,
+            declared_pack_names=list(parsed.metadata.declared_packs),
+        )
         return ToolExpansionResult(
             tools=tools,
             active_packs=packs,

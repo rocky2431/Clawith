@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,3 +103,34 @@ def iter_tool_packs(query: str = "") -> tuple[ToolPackSpec, ...]:
         or normalized in pack.summary.lower()
         or any(normalized in tool.lower() for tool in pack.tools)
     )
+
+
+def pack_for_name(name: str) -> ToolPackSpec | None:
+    for pack in TOOL_PACKS:
+        if pack.name == name:
+            return pack
+    return None
+
+
+def static_pack_names_for_tool(tool_name: str) -> tuple[str, ...]:
+    return tuple(pack.name for pack in TOOL_PACKS if tool_name in pack.tools)
+
+
+def infer_static_pack_names(tool_names: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for tool_name in tool_names:
+        for pack_name in static_pack_names_for_tool(tool_name):
+            if pack_name not in seen:
+                names.append(pack_name)
+                seen.add(pack_name)
+    return tuple(names)
+
+
+def make_mcp_server_pack_name(server_name: str | None, server_url: str | None = None) -> str:
+    source = server_name
+    if not source and server_url:
+        parsed = urlparse(server_url)
+        source = parsed.netloc or parsed.path or server_url
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", (source or "server").strip().lower()).strip("-") or "server"
+    return f"mcp_server:{normalized}"

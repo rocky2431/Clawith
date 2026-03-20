@@ -500,6 +500,31 @@ export const onboardingApi = {
 export const packApi = {
     catalog: () => request<any[]>('/packs'),
 
+    updatePolicy: (packName: string, enabled: boolean) =>
+        request<any>(`/enterprise/packs/policies/${encodeURIComponent(packName)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ enabled }),
+        }),
+
+    mcpRegistry: () =>
+        request<any[]>('/enterprise/mcp-servers'),
+
+    importMcp: (data: {
+        server_id?: string;
+        mcp_url?: string;
+        server_name?: string;
+        config?: Record<string, unknown>;
+    }) =>
+        request<any>('/enterprise/mcp-servers/import', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    deleteMcp: (serverKey: string) =>
+        request<any>(`/enterprise/mcp-servers/${encodeURIComponent(serverKey)}`, {
+            method: 'DELETE',
+        }),
+
     agentPacks: (agentId: string) =>
         request<{ kernel_tools: string[]; available_packs: any[]; channel_backed_packs: any[]; skill_declared_packs: any[] }>(
             `/agents/${agentId}/packs`,
@@ -510,6 +535,7 @@ export const packApi = {
             kernel_tools: string[];
             available_packs: any[];
             channel_backed_packs: any[];
+            skill_declared_packs: any[];
             capability_policies: any[];
             pending_approvals: number;
         }>(`/agents/${agentId}/capability-summary`),

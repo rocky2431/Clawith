@@ -655,7 +655,8 @@
       "sso": "SSO 登录",
       "capabilities": "能力策略",
       "onboarding": "引导",
-      "packs": "能力包"
+      "packs": "能力包",
+      "mcp": "MCP 注册表"
     },
     "memory": {
       "title": "记忆与摘要",

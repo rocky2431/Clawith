@@ -32,6 +32,7 @@ class SkillParser:
         name = (default_name or path.stem).replace("_", " ").replace("-", " ")
         description = ""
         declared_tools: list[str] = []
+        declared_packs: list[str] = []
         body = stripped
 
         match = self.FRONTMATTER_PATTERN.match(stripped)
@@ -75,6 +76,30 @@ class SkillParser:
                                 continue
                             i -= 1
                             break
+                elif line.lower().startswith("packs:"):
+                    inline_value = line[6:].strip()
+                    if inline_value:
+                        declared_packs.extend(
+                            item.strip().strip('"').strip("'")
+                            for item in inline_value.strip("[]").split(",")
+                            if item.strip()
+                        )
+                    else:
+                        i += 1
+                        while i < len(lines):
+                            pack_line = lines[i]
+                            stripped_pack_line = pack_line.strip()
+                            if stripped_pack_line.startswith("- "):
+                                value = stripped_pack_line[2:].strip().strip('"').strip("'")
+                                if value:
+                                    declared_packs.append(value)
+                                i += 1
+                                continue
+                            if pack_line.startswith((" ", "\t")) and not stripped_pack_line:
+                                i += 1
+                                continue
+                            i -= 1
+                            break
                 i += 1
 
         if not description:
@@ -89,6 +114,7 @@ class SkillParser:
                 name=name,
                 description=description,
                 declared_tools=tuple(declared_tools),
+                declared_packs=tuple(declared_packs),
             ),
             body=body,
             file_path=path,

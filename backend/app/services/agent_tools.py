@@ -29,7 +29,9 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.database import async_session
+from app.models.agent import Agent
 from app.skills import SkillRegistry, WorkspaceSkillLoader
+from app.services.pack_policy_service import get_tenant_pack_policies, is_pack_enabled
 from app.tools import (
     CoreToolDependencies,
     ExtendedToolDependencies,
@@ -44,7 +46,7 @@ from app.tools import (
     register_integration_tool_executors,
     run_tool_governance,
 )
-from app.tools.packs import iter_tool_packs
+from app.tools.packs import iter_tool_packs, make_mcp_server_pack_name, static_pack_names_for_tool
 
 logger = logging.getLogger(__name__)
 from app.config import get_settings
@@ -1199,6 +1201,10 @@ async def get_agent_tools_for_llm(
         from app.models.tool import Tool, AgentTool
 
         async with async_session() as db:
+            agent_result = await db.execute(select(Agent).where(Agent.id == agent_id))
+            agent = agent_result.scalar_one_or_none()
+            pack_policies = await get_tenant_pack_policies(db, getattr(agent, "tenant_id", None))
+
             # Get all globally enabled tools
             all_tools_r = await db.execute(select(Tool).where(Tool.enabled == True))
             all_tools = all_tools_r.scalars().all()
@@ -1218,6 +1224,12 @@ async def get_agent_tools_for_llm(
 
                 # Skip feishu tools if the agent has no Feishu channel configured
                 if t.category == "feishu" and not has_feishu:
+                    continue
+
+                static_packs = set(static_pack_names_for_tool(t.name))
+                if t.type == "mcp":
+                    static_packs.add(make_mcp_server_pack_name(t.mcp_server_name, t.mcp_server_url))
+                if static_packs and not any(is_pack_enabled(pack_policies, pack_name) for pack_name in static_packs):
                     continue
 
                 # Build OpenAI function-calling format

@@ -15,8 +15,9 @@ test('EnterpriseSettings removes legacy tools tab in favor of packs and capabili
     assert.doesNotMatch(source, /activeTab === 'tools'/);
     assert.doesNotMatch(source, /useState<'llm' \| 'org' \| 'info' \| 'approvals' \| 'audit' \| 'tools'/);
     assert.doesNotMatch(source, /\['info', 'llm', 'tools', 'packs'/);
-    assert.match(source, /\['info', 'llm', 'packs', 'skills'/);
+    assert.match(source, /\['info', 'llm', 'packs', 'mcp', 'skills'/);
     assert.match(source, /activeTab === 'packs'/);
+    assert.match(source, /activeTab === 'mcp'/);
     assert.match(source, /activeTab === 'capabilities'/);
 });
 
@@ -29,6 +30,10 @@ test('EnterpriseSettings removes legacy tool management state and loaders', () =
     assert.doesNotMatch(source, /loadAllTools/);
     assert.doesNotMatch(source, /loadAgentInstalledTools/);
     assert.doesNotMatch(source, /jina_api_key/);
+    assert.match(source, /packApi\.updatePolicy/);
+    assert.match(source, /packApi\.mcpRegistry/);
+    assert.match(source, /packApi\.importMcp/);
+    assert.match(source, /packApi\.deleteMcp/);
 });
 
 test('enterprise i18n removes the tools tab label', () => {

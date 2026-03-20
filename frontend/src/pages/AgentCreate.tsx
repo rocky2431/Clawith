@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agentApi, channelApi, enterpriseApi, skillApi } from '../services/api';
+import { agentApi, capabilityApi, channelApi, enterpriseApi, packApi, skillApi } from '../services/api';
 import ChannelConfig from '../components/ChannelConfig';
 
 const STEPS = ['identity', 'capabilities', 'risk', 'channel', 'review'] as const;
@@ -31,7 +31,6 @@ export default function AgentCreate() {
         fallback_model_id: '' as string,
         permission_scope_type: 'company',
         permission_access_level: 'use',
-        template_id: '' as string,
         max_tokens_per_day: '',
         max_tokens_per_month: '',
         skill_ids: [] as string[],
@@ -46,16 +45,20 @@ export default function AgentCreate() {
         queryFn: enterpriseApi.llmModels,
     });
 
-    // Fetch templates
-    const { data: templates = [] } = useQuery({
-        queryKey: ['templates'],
-        queryFn: enterpriseApi.templates,
-    });
-
     // Fetch global skills for step 3
     const { data: globalSkills = [] } = useQuery({
         queryKey: ['global-skills'],
         queryFn: skillApi.list,
+    });
+    const { data: packCatalog = [] } = useQuery({
+        queryKey: ['pack-catalog-for-create'],
+        queryFn: () => packApi.catalog(),
+        enabled: agentType === 'native',
+    });
+    const { data: capabilityDefinitions = [] } = useQuery({
+        queryKey: ['capability-definitions-for-create'],
+        queryFn: () => capabilityApi.definitions(),
+        enabled: agentType === 'native',
     });
 
     // Auto-select default skills
@@ -70,6 +73,48 @@ export default function AgentCreate() {
             }
         }
     }, [globalSkills]);
+
+    const kernelTools = useMemo(
+        () => ['read_file', 'write_file', 'edit_file', 'glob_search', 'grep_search', 'load_skill', 'set_trigger', 'send_message_to_agent', 'send_channel_file', 'tool_search'],
+        [],
+    );
+    const selectedSkills = useMemo(
+        () => globalSkills.filter((skill: any) => form.skill_ids.includes(skill.id)),
+        [globalSkills, form.skill_ids],
+    );
+    const selectedPacks = useMemo(() => {
+        const names: string[] = [];
+        const seen = new Set<string>();
+        const packByTool = new Map<string, string[]>();
+        for (const pack of packCatalog as any[]) {
+            for (const tool of pack.tools || []) {
+                const existing = packByTool.get(tool) || [];
+                existing.push(pack.name);
+                packByTool.set(tool, existing);
+            }
+        }
+        for (const skill of selectedSkills as any[]) {
+            for (const packName of skill.declared_packs || []) {
+                if (!seen.has(packName)) {
+                    seen.add(packName);
+                    names.push(packName);
+                }
+            }
+            for (const toolName of skill.declared_tools || []) {
+                for (const packName of packByTool.get(toolName) || []) {
+                    if (!seen.has(packName)) {
+                        seen.add(packName);
+                        names.push(packName);
+                    }
+                }
+            }
+        }
+        return names;
+    }, [packCatalog, selectedSkills]);
+    const starterPacks = useMemo(
+        () => (packCatalog as any[]).filter((pack: any) => selectedPacks.includes(pack.name)),
+        [packCatalog, selectedPacks],
+    );
 
     const createMutation = useMutation({
         mutationFn: async (data: any) => {
@@ -209,13 +254,14 @@ export default function AgentCreate() {
             boundaries: agentType === 'native' ? form.boundaries : undefined,
             primary_model_id: agentType === 'native' ? (form.primary_model_id || undefined) : undefined,
             fallback_model_id: agentType === 'native' ? (form.fallback_model_id || undefined) : undefined,
-            template_id: form.template_id || undefined,
             permission_scope_type: form.permission_scope_type,
             max_tokens_per_day: form.max_tokens_per_day ? Number(form.max_tokens_per_day) : undefined,
             max_tokens_per_month: form.max_tokens_per_month ? Number(form.max_tokens_per_month) : undefined,
             skill_ids: agentType === 'native' ? form.skill_ids : [],
             permission_access_level: form.permission_access_level,
             tenant_id: currentTenant || undefined,
+            security_zone: form.security_zone,
+            agent_class: form.agent_class,
         });
     };
 
@@ -511,67 +557,6 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                     <div>
                         <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step1New.title')}</h3>
 
-                        {/* Template selector */}
-                        {templates.length > 0 && (
-                            <div className="form-group">
-                                <label className="form-label">{t('wizard.step1.selectTemplate')}</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                                    <div
-                                        onClick={() => setForm({ ...form, template_id: '' })}
-                                        style={{
-                                            padding: '12px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center',
-                                            border: `1px solid ${!form.template_id ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                            background: !form.template_id ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                        }}
-                                    >
-                                        <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>{t('wizard.step1.custom')}</div>
-                                        <div style={{ fontSize: '12px', marginTop: '4px' }}>{t('wizard.step1.custom')}</div>
-                                    </div>
-                                    {templates.map((tmpl: any) => (
-                                        <div
-                                            key={tmpl.id}
-                                            onClick={() => setForm({ ...form, template_id: tmpl.id, role_description: tmpl.description })}
-                                            style={{
-                                                padding: '12px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center',
-                                                border: `1px solid ${form.template_id === tmpl.id ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                                background: form.template_id === tmpl.id ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                            }}
-                                        >
-                                            <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>{tmpl.icon || tmpl.name?.[0] || '·'}</div>
-                                            <div style={{ fontSize: '12px', marginTop: '4px' }}>{tmpl.name}</div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* JSON Import */}
-                                <div style={{ marginTop: '8px' }}>
-                                    <label className="btn btn-ghost" style={{ fontSize: '12px', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
-                                        ↑ Import from JSON
-                                        <input type="file" accept=".json" style={{ display: 'none' }} onChange={e => {
-                                            const file = e.target.files?.[0];
-                                            if (!file) return;
-                                            const reader = new FileReader();
-                                            reader.onload = ev => {
-                                                try {
-                                                    const data = JSON.parse(ev.target?.result as string);
-                                                    setForm(prev => ({
-                                                        ...prev,
-                                                        name: data.name || prev.name,
-                                                        role_description: data.role_description || data.description || prev.role_description,
-                                                        template_id: '',
-                                                    }));
-                                                } catch {
-                                                    alert('Invalid JSON file');
-                                                }
-                                            };
-                                            reader.readAsText(file);
-                                            e.target.value = '';
-                                        }} />
-                                    </label>
-                                </div>
-                            </div>
-                        )}
-
                         <div className="form-group">
                             <label className="form-label">{t('agent.fields.name')} *</label>
                             <input className={`form-input${fieldErrors.name ? ' input-error' : ''}`} value={form.name}
@@ -665,6 +650,47 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                             fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6,
                         }}>
                             {t('wizard.step2New.kernelInfo')}
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '10px', marginBottom: '8px' }}>Kernel Tools</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                                {kernelTools.map((tool) => (
+                                    <span key={tool} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', fontFamily: 'var(--font-mono)' }}>
+                                        {tool}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: '20px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Starter Packs Preview</div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
+                                Selected skills will unlock capability packs on demand. These packs are not always-on; they become available when the agent loads the matching skill.
+                            </div>
+                            {starterPacks.length > 0 ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '10px' }}>
+                                    {starterPacks.map((pack: any) => (
+                                        <div key={pack.name} className="card" style={{ padding: '12px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '6px' }}>
+                                                <span style={{ fontWeight: 600, fontSize: '13px' }}>{pack.name}</span>
+                                                <span style={{ fontSize: '10px', color: pack.enabled ? 'var(--success)' : 'var(--text-tertiary)' }}>
+                                                    {pack.enabled ? 'Enabled' : 'Disabled'}
+                                                </span>
+                                            </div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{pack.summary}</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                {(pack.tools || []).slice(0, 4).map((tool: string) => (
+                                                    <span key={tool} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                                                        {tool}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                    No starter packs selected yet. Choose skills below to define the first wave of on-demand capabilities.
+                                </div>
+                            )}
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -706,6 +732,10 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                     {t('wizard.step3.noSkills', 'No skills available. Add skills in Enterprise Settings.')}
                                 </div>
                             )}
+                        </div>
+
+                        <div style={{ marginTop: '20px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            Capability policies currently cover {capabilityDefinitions.length} governed actions. High-risk operations from these packs will still flow through runtime approval and capability gates after the agent is created.
                         </div>
                     </div>
                 )}
@@ -838,6 +868,7 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                 { label: t('wizard.step5.agentRole'), value: form.role_description || '-' },
                                 { label: t('wizard.step5.agentModel'), value: selectedModel?.label || t('wizard.step5.noneSelected') },
                                 { label: t('wizard.step5.agentSkills'), value: form.skill_ids.length > 0 ? `${form.skill_ids.length}` : t('wizard.step5.noneSelected') },
+                                { label: 'Starter Packs', value: starterPacks.length > 0 ? `${starterPacks.length}` : t('wizard.step5.noneSelected') },
                                 { label: t('wizard.step5.agentSecurityZone'), value: t(`agent.zone.${form.security_zone}`, form.security_zone) },
                                 { label: t('wizard.step5.agentAccessScope'), value: form.permission_scope_type === 'company' ? t('wizard.step4.companyWide') : t('wizard.step4.selfOnly') },
                                 ...(form.permission_scope_type === 'company' ? [{ label: t('wizard.step5.agentAccessLevel'), value: form.permission_access_level === 'manage' ? t('wizard.step4.manageLevel', 'Manage') : t('wizard.step4.useLevel', 'Use') }] : []),

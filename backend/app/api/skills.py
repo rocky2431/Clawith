@@ -492,12 +492,21 @@ async def list_skills(current_user: User = Depends(get_current_user)):
     from sqlalchemy import or_ as _or
     tenant_id = str(current_user.tenant_id) if current_user.tenant_id else None
     async with async_session() as db:
-        query = select(Skill).order_by(Skill.name)
+        query = select(Skill).options(selectinload(Skill.files)).order_by(Skill.name)
         # Scope by tenant: show builtin (tenant_id is NULL) + tenant-specific skills
         if tenant_id:
             query = query.where(_or(Skill.tenant_id == None, Skill.tenant_id == _uuid.UUID(tenant_id)))
         result = await db.execute(query)
         skills = result.scalars().all()
+        def _skill_declared_metadata(skill: Skill) -> tuple[list[str], list[str]]:
+            skill_md = next((f.content for f in skill.files if f.path.upper() == "SKILL.MD"), "")
+            frontmatter = _parse_skill_md_frontmatter(skill_md)
+            declared_tools = frontmatter.get("tools") or []
+            declared_packs = frontmatter.get("packs") or []
+            return (
+                [str(tool) for tool in declared_tools if tool],
+                [str(pack) for pack in declared_packs if pack],
+            )
         return [
             {
                 "id": str(s.id),
@@ -508,6 +517,8 @@ async def list_skills(current_user: User = Depends(get_current_user)):
                 "folder_name": s.folder_name,
                 "is_builtin": s.is_builtin,
                 "is_default": s.is_default,
+                "declared_tools": _skill_declared_metadata(s)[0],
+                "declared_packs": _skill_declared_metadata(s)[1],
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
             for s in skills
@@ -524,6 +535,8 @@ async def get_skill(skill_id: str):
         skill = result.scalar_one_or_none()
         if not skill:
             raise HTTPException(404, "Skill not found")
+        skill_md = next((f.content for f in skill.files if f.path.upper() == "SKILL.MD"), "")
+        frontmatter = _parse_skill_md_frontmatter(skill_md)
         return {
             "id": str(skill.id),
             "name": skill.name,
@@ -532,6 +545,8 @@ async def get_skill(skill_id: str):
             "icon": skill.icon,
             "folder_name": skill.folder_name,
             "is_builtin": skill.is_builtin,
+            "declared_tools": [str(tool) for tool in (frontmatter.get("tools") or []) if tool],
+            "declared_packs": [str(pack) for pack in (frontmatter.get("packs") or []) if pack],
             "files": [
                 {"path": f.path, "content": f.content}
                 for f in skill.files

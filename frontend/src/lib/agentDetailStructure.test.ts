@@ -15,6 +15,7 @@ test('AgentDetail uses capabilities tab instead of legacy tools tab', () => {
     assert.match(source, /const TABS = \['status', 'aware', 'mind', 'capabilities'/);
     assert.doesNotMatch(source, /activeTab === 'tools'/);
     assert.doesNotMatch(source, /function ToolsManager\(/);
+    assert.match(source, /skill_declared_packs/);
 });
 
 test('AgentDetail removes legacy autonomy policy panel', () => {

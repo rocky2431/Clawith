@@ -3,6 +3,7 @@
 import json
 import logging
 import uuid
+from collections import defaultdict
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,10 @@ from app.models.agent import Agent
 from app.models.channel_config import ChannelConfig
 from app.services.agent_tools import AGENT_TOOLS, CORE_TOOL_NAMES
 from app.services.capability_gate import CAPABILITY_MAP
-from app.tools.packs import TOOL_PACKS, ToolPackSpec
+from app.services.pack_policy_service import get_tenant_pack_policies, is_pack_enabled
+from app.skills.types import ParsedSkill
+from app.tools import ensure_workspace
+from app.tools.packs import TOOL_PACKS, ToolPackSpec, infer_static_pack_names, pack_for_name
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +61,15 @@ def _pack_to_dict(pack: ToolPackSpec) -> dict:
 def get_pack_catalog() -> list[dict]:
     """Return full pack catalog with capability annotations."""
     return [_pack_to_dict(p) for p in TOOL_PACKS]
+
+
+async def get_tenant_pack_catalog(db: AsyncSession, tenant_id: uuid.UUID | None) -> list[dict]:
+    """Return pack catalog annotated with tenant enablement state."""
+    policies = await get_tenant_pack_policies(db, tenant_id)
+    catalog: list[dict] = []
+    for pack in get_pack_catalog():
+        catalog.append({**pack, "enabled": is_pack_enabled(policies, pack["name"])})
+    return catalog
 
 
 def _resolve_session_conversation_id(session) -> str:
@@ -127,6 +140,48 @@ def _summarize_chat_messages(messages: list) -> dict:
     }
 
 
+def collect_skill_declared_packs(skills: list[ParsedSkill]) -> list[dict]:
+    """Merge explicit and inferred pack declarations from parsed skills."""
+    grouped: dict[str, dict[str, set[str]]] = defaultdict(lambda: {"skills": set(), "tools": set()})
+
+    for skill in skills:
+        explicit_packs = tuple(skill.metadata.declared_packs or ())
+        inferred_packs = infer_static_pack_names(skill.metadata.declared_tools)
+        pack_names: list[str] = []
+        seen: set[str] = set()
+        for pack_name in [*explicit_packs, *inferred_packs]:
+            if pack_name and pack_name not in seen:
+                pack_names.append(pack_name)
+                seen.add(pack_name)
+        for pack_name in pack_names:
+            grouped[pack_name]["skills"].add(skill.metadata.name)
+            grouped[pack_name]["tools"].update(skill.metadata.declared_tools)
+
+    result: list[dict] = []
+    for pack_name in sorted(grouped):
+        bucket = grouped[pack_name]
+        result.append(
+            {
+                "name": pack_name,
+                "skills": sorted(bucket["skills"]),
+                "tools": sorted(bucket["tools"]),
+            }
+        )
+    return result
+
+
+async def _load_agent_skill_declared_packs(agent_id: uuid.UUID) -> list[dict]:
+    try:
+        from app.skills.loader import WorkspaceSkillLoader
+
+        workspace = await ensure_workspace(agent_id)
+        parsed = WorkspaceSkillLoader().load_from_workspace(workspace)
+        return collect_skill_declared_packs(parsed)
+    except Exception as exc:
+        logger.debug("Failed to load workspace skills for agent %s: %s", agent_id, exc)
+        return []
+
+
 async def get_agent_packs(db: AsyncSession, agent_id: uuid.UUID) -> dict:
     """Compute which packs are available for a specific agent.
 
@@ -138,6 +193,18 @@ async def get_agent_packs(db: AsyncSession, agent_id: uuid.UUID) -> dict:
             "skill_declared_packs": [],
         }
     """
+    agent_result = await db.execute(select(Agent).where(Agent.id == agent_id))
+    agent = agent_result.scalar_one_or_none()
+    if not agent:
+        return {
+            "kernel_tools": list(KERNEL_TOOLS),
+            "available_packs": [],
+            "channel_backed_packs": [],
+            "skill_declared_packs": [],
+        }
+
+    pack_policies = await get_tenant_pack_policies(db, agent.tenant_id)
+
     # Check which channels are configured for this agent
     channel_result = await db.execute(
         select(ChannelConfig.channel_type).where(
@@ -151,6 +218,9 @@ async def get_agent_packs(db: AsyncSession, agent_id: uuid.UUID) -> dict:
     channel_backed = []
     for pack in TOOL_PACKS:
         pack_dict = _pack_to_dict(pack)
+        pack_dict["enabled"] = is_pack_enabled(pack_policies, pack.name)
+        if not pack_dict["enabled"]:
+            continue
 
         if pack.source == "channel":
             required_ch = pack_dict.get("requires_channel")
@@ -160,11 +230,26 @@ async def get_agent_packs(db: AsyncSession, agent_id: uuid.UUID) -> dict:
         else:
             available.append(pack_dict)
 
+    skill_declared_packs = []
+    for pack in await _load_agent_skill_declared_packs(agent_id):
+        if not is_pack_enabled(pack_policies, pack["name"]):
+            continue
+        base = pack_for_name(pack["name"])
+        skill_declared_packs.append(
+            {
+                **pack,
+                "summary": base.summary if base else "",
+                "source": base.source if base else "skill",
+                "activation_mode": base.activation_mode if base else "通过 skill 激活",
+                "enabled": True,
+            }
+        )
+
     return {
         "kernel_tools": list(KERNEL_TOOLS),
         "available_packs": available,
         "channel_backed_packs": channel_backed,
-        "skill_declared_packs": [],
+        "skill_declared_packs": skill_declared_packs,
     }
 
 
@@ -189,6 +274,8 @@ async def get_capability_summary(db: AsyncSession, agent_id: uuid.UUID) -> dict:
         return {
             "kernel_tools": list(KERNEL_TOOLS),
             "available_packs": [],
+            "channel_backed_packs": [],
+            "skill_declared_packs": [],
             "capability_policies": [],
             "pending_approvals": 0,
         }
@@ -234,6 +321,7 @@ async def get_capability_summary(db: AsyncSession, agent_id: uuid.UUID) -> dict:
         "kernel_tools": packs_data["kernel_tools"],
         "available_packs": packs_data["available_packs"],
         "channel_backed_packs": packs_data["channel_backed_packs"],
+        "skill_declared_packs": packs_data["skill_declared_packs"],
         "capability_policies": policies,
         "pending_approvals": pending_count,
     }

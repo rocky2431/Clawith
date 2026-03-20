@@ -1318,7 +1318,7 @@ function MemoryTab({ models }: { models: LLMModel[] }) {
 export default function EnterpriseSettings() {
     const { t } = useTranslation();
     const qc = useQueryClient();
-    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'packs' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory' | 'sso' | 'capabilities'>('info');
+    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'packs' | 'mcp' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory' | 'sso' | 'capabilities'>('info');
 
     // OpenViking status for KB tab
     const { data: vikingStatus } = useQuery({
@@ -1416,6 +1416,9 @@ export default function EnterpriseSettings() {
 
     // ─── Capabilities state
     const [capSaving, setCapSaving] = useState<string | null>(null);
+    const [packSaving, setPackSaving] = useState<string | null>(null);
+    const [mcpForm, setMcpForm] = useState({ server_id: '', mcp_url: '', server_name: '', api_key: '' });
+    const [mcpError, setMcpError] = useState('');
 
     const [infoRefresh, setInfoRefresh] = useState(0);
     const [kbPromptModal, setKbPromptModal] = useState(false);
@@ -1576,6 +1579,11 @@ export default function EnterpriseSettings() {
         queryFn: () => packApi.catalog(),
         enabled: activeTab === 'packs',
     });
+    const { data: tenantMcpServers = [], isLoading: mcpLoading } = useQuery({
+        queryKey: ['tenant-mcp-registry'],
+        queryFn: () => packApi.mcpRegistry(),
+        enabled: activeTab === 'mcp',
+    });
     const [expandedPacks, setExpandedPacks] = useState<Record<string, boolean>>({});
 
     // ─── Capabilities
@@ -1610,6 +1618,40 @@ export default function EnterpriseSettings() {
         }
     };
 
+    const handlePackPolicy = async (packName: string, enabled: boolean) => {
+        setPackSaving(packName);
+        try {
+            await packApi.updatePolicy(packName, enabled);
+            qc.invalidateQueries({ queryKey: ['pack-catalog'] });
+        } finally {
+            setPackSaving(null);
+        }
+    };
+
+    const handleImportMcp = async () => {
+        setMcpError('');
+        try {
+            const payload = {
+                server_id: mcpForm.server_id.trim() || undefined,
+                mcp_url: mcpForm.mcp_url.trim() || undefined,
+                server_name: mcpForm.server_name.trim() || undefined,
+                config: mcpForm.api_key.trim() ? { api_key: mcpForm.api_key.trim() } : undefined,
+            };
+            await packApi.importMcp(payload);
+            setMcpForm({ server_id: '', mcp_url: '', server_name: '', api_key: '' });
+            qc.invalidateQueries({ queryKey: ['tenant-mcp-registry'] });
+            qc.invalidateQueries({ queryKey: ['pack-catalog'] });
+        } catch (e: any) {
+            setMcpError(e?.message || 'Import failed');
+        }
+    };
+
+    const handleDeleteMcp = async (serverKey: string) => {
+        await packApi.deleteMcp(serverKey);
+        qc.invalidateQueries({ queryKey: ['tenant-mcp-registry'] });
+        qc.invalidateQueries({ queryKey: ['pack-catalog'] });
+    };
+
     // ─── Onboarding
     const { data: onboardingData } = useQuery({
         queryKey: ['onboarding-status'],
@@ -1634,7 +1676,7 @@ export default function EnterpriseSettings() {
                 </div>
 
                 <div className="tabs">
-                    {(['info', 'llm', 'packs', 'skills', 'memory', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'sso', 'capabilities', 'flags'] as const).map(tab => (
+                    {(['info', 'llm', 'packs', 'mcp', 'skills', 'memory', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'sso', 'capabilities', 'flags'] as const).map(tab => (
                         <div key={tab} className={`tab ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>
                             {tab === 'quotas' ? t('enterprise.tabs.quotas', 'Quotas') : tab === 'users' ? t('enterprise.tabs.users', 'Users') : tab === 'invites' ? t('enterprise.tabs.invites', 'Invitations') : t(`enterprise.tabs.${tab}`, tab)}
                         </div>
@@ -2475,14 +2517,25 @@ export default function EnterpriseSettings() {
                                         <div key={pack.name} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                 <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>{pack.name}</span>
-                                                <span style={{
-                                                    fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '10px',
-                                                    background: badge.bg, color: badge.color,
-                                                }}>{sourceLabel}</span>
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                    <span style={{
+                                                        fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '10px',
+                                                        background: badge.bg, color: badge.color,
+                                                    }}>{sourceLabel}</span>
+                                                    <button
+                                                        className="btn btn-secondary"
+                                                        style={{ fontSize: '11px', padding: '4px 10px' }}
+                                                        disabled={packSaving === pack.name}
+                                                        onClick={() => handlePackPolicy(pack.name, !pack.enabled)}
+                                                    >
+                                                        {packSaving === pack.name ? '...' : (pack.enabled ? 'Disable' : 'Enable')}
+                                                    </button>
+                                                </div>
                                             </div>
                                             <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>{pack.summary}</p>
                                             <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
                                                 <span>{t('enterprise.packs.activation')}: <strong style={{ color: 'var(--text-secondary)' }}>{pack.activation_mode}</strong></span>
+                                                <span>Status: <strong style={{ color: pack.enabled ? 'var(--success)' : 'var(--text-tertiary)' }}>{pack.enabled ? 'Enabled' : 'Disabled'}</strong></span>
                                             </div>
                                             {pack.requires_channel && (
                                                 <div style={{ fontSize: '11px', color: '#60a5fa', background: 'rgba(59,130,246,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
@@ -2530,6 +2583,74 @@ export default function EnterpriseSettings() {
                                 })}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === 'mcp' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div className="card">
+                            <h3 style={{ marginBottom: '4px' }}>MCP Registry</h3>
+                            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
+                                Import and manage tenant-wide MCP servers. Imported servers become pack-backed capabilities for all agents in this company.
+                            </p>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Smithery Server ID</label>
+                                    <input className="form-input" value={mcpForm.server_id} onChange={e => setMcpForm(f => ({ ...f, server_id: e.target.value }))} placeholder="github / gmail / notion" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Direct MCP URL</label>
+                                    <input className="form-input" value={mcpForm.mcp_url} onChange={e => setMcpForm(f => ({ ...f, mcp_url: e.target.value }))} placeholder="https://example.com/mcp" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Display Name</label>
+                                    <input className="form-input" value={mcpForm.server_name} onChange={e => setMcpForm(f => ({ ...f, server_name: e.target.value }))} placeholder="GitHub MCP" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">API Key (optional)</label>
+                                    <input className="form-input" type="password" value={mcpForm.api_key} onChange={e => setMcpForm(f => ({ ...f, api_key: e.target.value }))} placeholder="Optional server credential" />
+                                </div>
+                            </div>
+                            {mcpError ? <div style={{ color: 'var(--error)', fontSize: '12px', marginBottom: '8px' }}>{mcpError}</div> : null}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button className="btn btn-primary" onClick={handleImportMcp}>Import MCP Server</button>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <h4 style={{ marginBottom: '12px' }}>Installed MCP Servers</h4>
+                            {mcpLoading ? (
+                                <div style={{ color: 'var(--text-tertiary)' }}>{t('common.loading')}</div>
+                            ) : tenantMcpServers.length === 0 ? (
+                                <div style={{ color: 'var(--text-tertiary)' }}>{t('common.noData')}</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {tenantMcpServers.map((server: any) => (
+                                        <div key={server.server_key} style={{ border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '12px 14px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}>{server.server_name}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>{server.server_url || server.server_key}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                                        {server.tool_count} tools · {server.agent_count} agents · pack {server.pack_name}
+                                                    </div>
+                                                </div>
+                                                <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => handleDeleteMcp(server.server_key)}>
+                                                    {t('common.delete')}
+                                                </button>
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '10px' }}>
+                                                {(server.tools || []).map((tool: string) => (
+                                                    <span key={tool} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                                                        {tool}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 

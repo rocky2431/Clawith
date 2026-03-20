@@ -123,7 +123,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
         return <div style={{ color: 'var(--text-tertiary)', padding: '20px' }}>{t('common.loading')}</div>;
     }
 
-    const { kernel_tools, available_packs, channel_backed_packs, capability_policies } = capSummary;
+    const { kernel_tools, available_packs, channel_backed_packs, skill_declared_packs, capability_policies } = capSummary;
     const allPacks = [...available_packs, ...channel_backed_packs];
 
     return (
@@ -195,7 +195,53 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                 )}
             </div>
 
-            {/* Section 3: Session Activations (collapsible) */}
+            {/* Section 3: Skill-declared Packs */}
+            <div>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>Skill-declared Packs</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
+                    Installed skills that can expand this agent into additional capability packs.
+                </p>
+                {skill_declared_packs && skill_declared_packs.length > 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+                        {skill_declared_packs.map((pack: any) => (
+                            <div key={pack.name} className="card" style={{ padding: '14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{pack.name}</div>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{pack.source || 'skill'}</span>
+                                </div>
+                                {pack.summary ? (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{pack.summary}</div>
+                                ) : null}
+                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                                    Skills: {(pack.skills || []).join(', ') || '—'}
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {(pack.tools || []).map((tool: string) => (
+                                        <span
+                                            key={tool}
+                                            style={{
+                                                fontSize: '11px',
+                                                padding: '2px 8px',
+                                                borderRadius: '4px',
+                                                background: 'var(--bg-secondary)',
+                                                border: '1px solid var(--border-subtle)',
+                                            }}
+                                        >
+                                            {tool}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                        No skill-declared packs yet.
+                    </div>
+                )}
+            </div>
+
+            {/* Section 4: Session Activations (collapsible) */}
             <details
                 className="card"
                 open={sessionExpanded}

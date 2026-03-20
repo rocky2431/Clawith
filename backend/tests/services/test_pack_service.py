@@ -9,8 +9,10 @@ from app.services.pack_service import (
     KERNEL_TOOLS,
     _resolve_session_conversation_id,
     _summarize_chat_messages,
+    collect_skill_declared_packs,
     get_pack_catalog,
 )
+from app.skills.types import ParsedSkill, SkillMetadata
 
 
 def test_pack_catalog_returns_all_packs():
@@ -121,3 +123,45 @@ def test_summarize_chat_messages_extracts_runtime_events_and_tool_usage():
         }],
         "compaction_count": 1,
     }
+
+
+def test_collect_skill_declared_packs_merges_explicit_and_inferred_packs():
+    skills = [
+        ParsedSkill(
+            metadata=SkillMetadata(
+                name="Feishu Assistant",
+                description="",
+                declared_tools=("send_feishu_message",),
+                declared_packs=("feishu_pack",),
+            ),
+            body="# Feishu Assistant",
+            file_path=SimpleNamespace(),
+            relative_path="skills/feishu/SKILL.md",
+        ),
+        ParsedSkill(
+            metadata=SkillMetadata(
+                name="Web Research",
+                description="",
+                declared_tools=("web_search", "jina_read"),
+                declared_packs=(),
+            ),
+            body="# Web Research",
+            file_path=SimpleNamespace(),
+            relative_path="skills/web/SKILL.md",
+        ),
+    ]
+
+    declared = collect_skill_declared_packs(skills)
+
+    assert declared == [
+        {
+            "name": "feishu_pack",
+            "skills": ["Feishu Assistant"],
+            "tools": ["send_feishu_message"],
+        },
+        {
+            "name": "web_pack",
+            "skills": ["Web Research"],
+            "tools": ["jina_read", "web_search"],
+        },
+    ]

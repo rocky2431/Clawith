@@ -643,7 +643,8 @@
       "sso": "SSO",
       "capabilities": "Capabilities",
       "onboarding": "Onboarding",
-      "packs": "Packs"
+      "packs": "Packs",
+      "mcp": "MCP Registry"
     },
     "memory": {
       "title": "Memory & Summarization",
