@@ -24,14 +24,6 @@ SAFE_TOOLS = {
     "list_tasks",
     "get_task",
 }
-TOOL_AUTONOMY_MAP = {
-    "write_file": "write_workspace_files",
-    "delete_file": "delete_files",
-    "send_feishu_message": "send_feishu_message",
-    "send_message_to_agent": "send_feishu_message",
-    "web_search": "web_search",
-    "execute_code": "execute_code",
-}
 
 
 @dataclass(slots=True)
@@ -48,7 +40,7 @@ class GovernanceDependencies:
     resolve_security_zone: Callable[[uuid.UUID], Awaitable[str] | str]
     check_capability: Callable[[uuid.UUID, uuid.UUID, str], Awaitable[Any] | Any]
     write_audit_event: Callable[..., Awaitable[None] | None]
-    check_autonomy: Callable[..., Awaitable[dict] | dict]
+    request_approval: Callable[..., Awaitable[dict] | dict]
 
 
 async def _maybe_await(value: Any) -> Any:
@@ -184,56 +176,36 @@ async def run_tool_governance(
     else:
         _escalated_capability = None
 
-    action_type = TOOL_AUTONOMY_MAP.get(context.tool_name)
-    if action_type:
+    if _escalated_capability:
         try:
-            autonomy_kwargs = {
-                "agent_id": context.agent_id,
-                "user_id": context.user_id,
-                "tool_name": context.tool_name,
-                "arguments": {
-                    **context.arguments,
-                    **({"_capability": _escalated_capability} if _escalated_capability else {}),
-                },
-            }
-            if "action_type" in inspect.signature(deps.check_autonomy).parameters:
-                autonomy_kwargs["action_type"] = action_type
-            result_check = await _maybe_await(deps.check_autonomy(**autonomy_kwargs))
-            if not result_check.get("allowed"):
-                level = result_check.get("level", "L3")
-                if level == "L3":
-                    message = (
-                        "⏳ This action requires approval. An approval request has been sent. "
-                        f"Please wait for approval before retrying. (Approval ID: {result_check.get('approval_id', 'N/A')})"
-                    )
-                    await _emit_event(
-                        event_callback,
-                        {
-                            "type": "permission",
-                            "tool_name": context.tool_name,
-                            "status": "approval_required",
-                            "message": message,
-                            "approval_id": result_check.get("approval_id"),
-                            "autonomy_level": level,
-                            **({"capability": _escalated_capability} if _escalated_capability else {}),
-                        },
-                    )
-                    return message
-                message = f"❌ Action denied: {result_check.get('message', 'unknown reason')}"
-                await _emit_event(
-                    event_callback,
-                    {
-                        "type": "permission",
-                        "tool_name": context.tool_name,
-                        "status": "blocked",
-                        "message": message,
-                        "autonomy_level": level,
-                    },
+            result_check = await _maybe_await(
+                deps.request_approval(
+                    agent_id=context.agent_id,
+                    user_id=context.user_id,
+                    tool_name=context.tool_name,
+                    arguments=context.arguments,
+                    capability=_escalated_capability,
                 )
-                return message
+            )
+            message = (
+                "⏳ This action requires approval. An approval request has been sent. "
+                f"Please wait for approval before retrying. (Approval ID: {result_check.get('approval_id', 'N/A')})"
+            )
+            await _emit_event(
+                event_callback,
+                {
+                    "type": "permission",
+                    "tool_name": context.tool_name,
+                    "status": "approval_required",
+                    "message": message,
+                    "approval_id": result_check.get("approval_id"),
+                    "capability": _escalated_capability,
+                },
+            )
+            return message
         except Exception as exc:
-            logger.error("[Autonomy] Check failed — blocking as safety measure: %s", exc)
-            message = f"⚠️ Autonomy check failed ({exc}). Operation blocked for safety. Please retry or contact admin."
+            logger.error("[Approval] Request failed — blocking as safety measure: %s", exc)
+            message = f"⚠️ Approval request failed ({exc}). Operation blocked for safety. Please retry or contact admin."
             await _emit_event(
                 event_callback,
                 {
@@ -241,6 +213,7 @@ async def run_tool_governance(
                     "tool_name": context.tool_name,
                     "status": "blocked",
                     "message": message,
+                    "capability": _escalated_capability,
                 },
             )
             return message

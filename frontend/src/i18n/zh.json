@@ -156,7 +156,7 @@
       "tasks": "任务",
       "aware": "自我意识",
       "mind": "心智",
-      "tools": "工具",
+      "capabilities": "能力",
       "skills": "技能",
       "relationships": "关系",
       "workspace": "工作区",
@@ -271,10 +271,6 @@
       "enabled": "已启用",
       "disabled": "已禁用"
     },
-    "toolMgmt": {
-      "title": "工具管理",
-      "description": "管理此数字员工可使用的工具。"
-    },
     "workspace": {
       "title": "工作区",
       "rootDir": "根目录",
@@ -343,9 +339,7 @@
         "manageTasksDesc": "创建、更新或删除任务",
         "l1Auto": "L1 自动执行",
         "l2Notify": "L2 通知",
-        "l3Approve": "L3 审批",
-        "legacyTitle": "高级：旧版自主性级别",
-        "legacyInfo": "这些设置正在被上方的能力策略取代。"
+        "l3Approve": "L3 审批"
       },
       "capabilityPolicy": {
         "title": "能力策略",
@@ -437,7 +431,6 @@
       }
     },
     "tools": {
-      "platformTools": "平台预置工具",
       "agentInstalled": "Agent 自行安装的工具",
       "saveFailed": "保存失败：",
       "deleteFailed": "删除失败",
@@ -647,7 +640,6 @@
     "title": "公司设置",
     "tabs": {
       "llm": "模型池",
-      "tools": "工具",
       "org": "组织架构",
       "info": "公司信息",
       "audit": "审计日志",
@@ -706,38 +698,6 @@
       "delete": "删除",
       "edit": "编辑",
       "cancel": "取消"
-    },
-    "tools": {
-      "title": "全局工具管理",
-      "globalTools": "全局工具",
-      "agentInstalled": "员工已安装",
-      "agentInstalledDesc": "员工通过 import_mcp_server 安装的工具。删除将从该员工中移除此工具。",
-      "noAgentInstalled": "暂无员工安装的工具",
-      "mcp": "MCP",
-      "builtin": "内置",
-      "default": "默认",
-      "unknownAgent": "未知员工",
-      "addMcp": "+ MCP 服务器",
-      "mcpServer": "MCP 服务器",
-      "jsonConfig": "JSON 配置",
-      "name": "名称：",
-      "url": "地址：",
-      "mcpPlaceholder": "我的 MCP 服务器",
-      "confirmRemove": "从员工中移除「{{name}}」？",
-      "testConnection": "测试连接",
-      "testing": "测试中...",
-      "connectionSuccess": "连接成功！发现 {{count}} 个工具",
-      "connectionFailed": "连接失败",
-      "importAll": "导入全部",
-      "mcpServerName": "MCP 服务名称",
-      "mcpServerUrl": "MCP Server URL",
-      "configure": "配置",
-      "collapse": "收起",
-      "saveConfig": "保存配置",
-      "description": "描述",
-      "parameters": "参数配置",
-      "initBuiltinsHint": "请先启动后端以初始化内置工具。",
-      "emptyState": "暂无数据。请先启动后端以初始化内置工具。"
     },
     "org": {
       "feishuSync": "飞书通讯录同步配置",

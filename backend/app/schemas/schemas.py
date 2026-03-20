@@ -76,8 +76,6 @@ class AgentCreate(BaseModel):
     tenant_id: uuid.UUID | None = None
     # Template
     template_id: uuid.UUID | None = None
-    # Autonomy
-    autonomy_policy: dict | None = None
     # Token limits
     max_tokens_per_day: int | None = None
     max_tokens_per_month: int | None = None
@@ -100,7 +98,6 @@ class AgentOut(BaseModel):
     creator_username: str | None = None  # Populated by API layer; not in ORM model directly
     primary_model_id: uuid.UUID | None = None
     fallback_model_id: uuid.UUID | None = None
-    autonomy_policy: dict
     tokens_used_today: int
     tokens_used_month: int
     tokens_used_total: int = 0
@@ -135,7 +132,6 @@ class AgentUpdate(BaseModel):
     bio: str | None = None
     welcome_message: str | None = None
     avatar_url: str | None = None
-    autonomy_policy: dict | None = None
     primary_model_id: uuid.UUID | None = None
     fallback_model_id: uuid.UUID | None = None
     max_tokens_per_day: int | None = None
@@ -445,4 +441,3 @@ class GatewaySendMessageRequest(BaseModel):
     target: str  # Name of target person or agent
     content: str = Field(min_length=1)
     channel: str | None = None  # Optional: "feishu", "agent", etc. Auto-detected if omitted.
-

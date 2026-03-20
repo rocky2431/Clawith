@@ -1,5 +1,6 @@
 """Pack service — compute pack availability, capability mapping, and session runtime state."""
 
+import json
 import logging
 import uuid
 
@@ -8,26 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
 from app.models.channel_config import ChannelConfig
+from app.services.agent_tools import AGENT_TOOLS, CORE_TOOL_NAMES
 from app.services.capability_gate import CAPABILITY_MAP
 from app.tools.packs import TOOL_PACKS, ToolPackSpec
 
 logger = logging.getLogger(__name__)
 
-# Kernel tools — always available, never in a pack
-KERNEL_TOOLS = (
-    "list_files",
-    "read_file",
-    "write_file",
-    "edit_file",
-    "glob_search",
-    "grep_search",
-    "load_skill",
-    "set_trigger",
-    "list_triggers",
-    "send_channel_file",
-    "send_message_to_agent",
-    "send_web_message",
-    "tool_search",
+# Kernel tools must mirror the runtime's real minimal toolset.
+KERNEL_TOOLS = tuple(
+    tool["function"]["name"]
+    for tool in AGENT_TOOLS
+    if tool["function"]["name"] in CORE_TOOL_NAMES
 )
 
 # Channel type → pack name mapping
@@ -65,6 +57,74 @@ def _pack_to_dict(pack: ToolPackSpec) -> dict:
 def get_pack_catalog() -> list[dict]:
     """Return full pack catalog with capability annotations."""
     return [_pack_to_dict(p) for p in TOOL_PACKS]
+
+
+def _resolve_session_conversation_id(session) -> str:
+    """Resolve the persisted ChatMessage conversation_id for a session.
+
+    ChatMessage.conversation_id is stored as the ChatSession UUID across web,
+    Feishu, and agent sessions. external_conv_id is only for find-or-create.
+    """
+    return str(session.id)
+
+
+def _load_json_content(content: str) -> dict:
+    try:
+        data = json.loads(content or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _summarize_chat_messages(messages: list) -> dict:
+    """Summarize runtime events and tool usage from persisted ChatMessage rows."""
+    activated_packs: list[str] = []
+    used_tools: set[str] = set()
+    blocked_capabilities: list[dict] = []
+    compaction_count = 0
+
+    for msg in messages:
+        if getattr(msg, "role", None) == "tool_call":
+            tool_data = _load_json_content(getattr(msg, "content", ""))
+            tool_name = tool_data.get("name")
+            if tool_name:
+                used_tools.add(tool_name)
+            continue
+
+        if getattr(msg, "role", None) != "system":
+            continue
+
+        event_data = _load_json_content(getattr(msg, "content", ""))
+        event_type = event_data.get("event_type") or event_data.get("type")
+
+        if event_type == "pack_activation":
+            for pack in event_data.get("packs", []):
+                name = pack.get("name") if isinstance(pack, dict) else str(pack)
+                if name and name not in activated_packs:
+                    activated_packs.append(name)
+            continue
+
+        if event_type == "permission":
+            status = event_data.get("status")
+            if status in {"blocked", "capability_denied", "approval_required"}:
+                blocked_capabilities.append(
+                    {
+                        "tool": event_data.get("tool_name"),
+                        "status": status,
+                        "capability": event_data.get("capability"),
+                    }
+                )
+            continue
+
+        if event_type == "session_compact":
+            compaction_count += 1
+
+    return {
+        "activated_packs": activated_packs,
+        "used_tools": sorted(used_tools),
+        "blocked_capabilities": blocked_capabilities,
+        "compaction_count": compaction_count,
+    }
 
 
 async def get_agent_packs(db: AsyncSession, agent_id: uuid.UUID) -> dict:
@@ -194,7 +254,7 @@ async def get_session_runtime_summary(db: AsyncSession, session_id: uuid.UUID) -
     if not session:
         return {"activated_packs": [], "used_tools": [], "blocked_capabilities": [], "compaction_count": 0}
 
-    conv_id = session.external_conv_id or str(session_id)
+    conv_id = _resolve_session_conversation_id(session)
     result = await db.execute(
         select(ChatMessage)
         .where(
@@ -204,50 +264,4 @@ async def get_session_runtime_summary(db: AsyncSession, session_id: uuid.UUID) -
         .order_by(ChatMessage.created_at)
     )
     messages = result.scalars().all()
-
-    activated_packs: list[str] = []
-    used_tools: set[str] = set()
-    blocked_capabilities: list[dict] = []
-    compaction_count = 0
-
-    for msg in messages:
-        parts = getattr(msg, "parts", None)
-        if not parts or not isinstance(parts, list):
-            continue
-
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            ptype = part.get("type")
-
-            if ptype == "pack_activation":
-                for p in part.get("packs", []):
-                    name = p.get("name") if isinstance(p, dict) else str(p)
-                    if name and name not in activated_packs:
-                        activated_packs.append(name)
-
-            elif ptype == "tool_call":
-                tool_name = part.get("name")
-                if tool_name:
-                    used_tools.add(tool_name)
-
-            elif ptype == "permission":
-                status = part.get("status")
-                if status in ("blocked", "capability_denied", "approval_required"):
-                    blocked_capabilities.append(
-                        {
-                            "tool": part.get("tool_name"),
-                            "status": status,
-                            "capability": part.get("capability"),
-                        }
-                    )
-
-            elif ptype == "session_compact":
-                compaction_count += 1
-
-    return {
-        "activated_packs": activated_packs,
-        "used_tools": sorted(used_tools),
-        "blocked_capabilities": blocked_capabilities,
-        "compaction_count": compaction_count,
-    }
+    return _summarize_chat_messages(messages)

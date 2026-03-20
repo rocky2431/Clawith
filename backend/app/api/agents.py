@@ -65,7 +65,6 @@ async def list_templates(
             "is_builtin": t.is_builtin,
             "soul_template": t.soul_template,
             "default_skills": t.default_skills,
-            "default_autonomy_policy": t.default_autonomy_policy,
         }
         for t in templates
     ]
@@ -194,9 +193,6 @@ async def create_agent(
         min_poll_interval_min=default_min_poll,
         webhook_rate_limit=default_webhook_rate,
     )
-    if data.autonomy_policy:
-        agent.autonomy_policy = data.autonomy_policy
-
     db.add(agent)
     await db.flush()
 
@@ -723,10 +719,10 @@ async def resolve_agent_approval(
     """Approve or reject a pending approval for a specific agent."""
     agent, _access = await check_agent_access(db, current_user, agent_id)
 
-    from app.services.autonomy_service import autonomy_service
+    from app.services.approval_service import approval_service
     action = data.get("action", "reject")
     try:
-        approval = await autonomy_service.resolve_approval(db, approval_id, current_user, action)
+        approval = await approval_service.resolve_approval(db, approval_id, current_user, action)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

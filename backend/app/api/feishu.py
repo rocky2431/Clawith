@@ -232,7 +232,7 @@ async def feishu_card_callback(request: Request, db: AsyncSession = Depends(get_
 
     # Resolve the approval
     try:
-        from app.services.autonomy_service import autonomy_service
+        from app.services.approval_service import approval_service
 
         approval_uuid = uuid.UUID(approval_id_str)
 
@@ -251,7 +251,7 @@ async def feishu_card_callback(request: Request, db: AsyncSession = Depends(get_
                 "toast": {"type": "error", "content": "User not found. Please use the web platform to approve."},
             }
 
-        approval = await autonomy_service.resolve_approval(db, approval_uuid, user, action_type)
+        approval = await approval_service.resolve_approval(db, approval_uuid, user, action_type)
 
         # Audit event
         try:

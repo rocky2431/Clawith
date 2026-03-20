@@ -21,8 +21,8 @@ async def test_governance_blocks_unsafe_tool_in_public_zone():
     async def write_audit(**kwargs):
         raise AssertionError("audit should not run for pure security-zone block")
 
-    async def check_autonomy(*args, **kwargs):
-        raise AssertionError("autonomy check should not run when security zone already blocks")
+    async def request_approval(*args, **kwargs):
+        raise AssertionError("approval request should not run when security zone already blocks")
 
     message = await run_tool_governance(
         ToolGovernanceContext(
@@ -36,7 +36,7 @@ async def test_governance_blocks_unsafe_tool_in_public_zone():
             resolve_security_zone=resolve_security_zone,
             check_capability=check_capability,
             write_audit_event=write_audit,
-            check_autonomy=check_autonomy,
+            request_approval=request_approval,
         ),
         event_callback=events.append,
     )
@@ -78,8 +78,8 @@ async def test_governance_emits_capability_denied_and_audit():
     async def write_audit(**kwargs):
         audit_calls.append(kwargs)
 
-    async def check_autonomy(*args, **kwargs):
-        raise AssertionError("autonomy check should not run after capability deny")
+    async def request_approval(*args, **kwargs):
+        raise AssertionError("approval request should not run after capability deny")
 
     message = await run_tool_governance(
         ToolGovernanceContext(
@@ -93,7 +93,7 @@ async def test_governance_emits_capability_denied_and_audit():
             resolve_security_zone=resolve_security_zone,
             check_capability=check_capability,
             write_audit_event=write_audit,
-            check_autonomy=check_autonomy,
+            request_approval=request_approval,
         ),
         event_callback=events.append,
     )
@@ -120,7 +120,7 @@ async def test_governance_emits_capability_denied_and_audit():
 
 
 @pytest.mark.asyncio
-async def test_governance_returns_approval_required_for_l3_autonomy():
+async def test_governance_requests_approval_when_capability_requires_it():
     from app.tools.governance import GovernanceDependencies, ToolGovernanceContext, run_tool_governance
 
     events = []
@@ -129,15 +129,21 @@ async def test_governance_returns_approval_required_for_l3_autonomy():
         return "standard"
 
     async def check_capability(_tenant_id, _agent_id, _tool_name):
-        return SimpleNamespace(denied=False, escalate_to_l3=False, capability="", reason="")
+        return SimpleNamespace(
+            denied=False,
+            escalate_to_l3=True,
+            capability="channel.feishu.message",
+            reason="Capability 'channel.feishu.message' requires approval",
+        )
 
     async def write_audit(**kwargs):
         return None
 
-    async def check_autonomy(*, agent_id, user_id, tool_name, arguments):
+    async def request_approval(*, agent_id, user_id, tool_name, arguments, capability):
         assert tool_name == "send_feishu_message"
         assert arguments["message"] == "hi"
-        return {"allowed": False, "level": "L3", "approval_id": "approval-1"}
+        assert capability == "channel.feishu.message"
+        return {"allowed": False, "approval_id": "approval-1"}
 
     message = await run_tool_governance(
         ToolGovernanceContext(
@@ -151,7 +157,7 @@ async def test_governance_returns_approval_required_for_l3_autonomy():
             resolve_security_zone=resolve_security_zone,
             check_capability=check_capability,
             write_audit_event=write_audit,
-            check_autonomy=check_autonomy,
+            request_approval=request_approval,
         ),
         event_callback=events.append,
     )
@@ -169,5 +175,5 @@ async def test_governance_returns_approval_required_for_l3_autonomy():
             "Please wait for approval before retrying. (Approval ID: approval-1)"
         ),
         "approval_id": "approval-1",
-        "autonomy_level": "L3",
+        "capability": "channel.feishu.message",
     }]

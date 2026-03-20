@@ -288,7 +288,6 @@ from app.api.activity import router as activity_router
 from app.api.messages import router as messages_router
 from app.api.tenants import router as tenants_router
 from app.api.schedules import router as schedules_router
-from app.api.tools import router as tools_router
 from app.api.plaza import router as plaza_router
 from app.api.skills import router as skills_router
 from app.api.users import router as users_router
@@ -318,7 +317,7 @@ _api_routers = [
     auth_router, agents_router, tasks_router, files_router, feishu_router,
     org_router, enterprise_router, advanced_router, upload_router,
     relationships_router, activity_router, messages_router, tenants_router,
-    schedules_router, tools_router, files_upload_router, enterprise_kb_router,
+    schedules_router, files_upload_router, enterprise_kb_router,
     skills_router, users_router, slack_router, discord_router, dingtalk_router,
     wecom_router, teams_router, atlassian_router, notification_router,
     gateway_router, config_history_router, feature_flags_router, admin_router,

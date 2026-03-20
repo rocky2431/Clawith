@@ -14,7 +14,7 @@ import { activityApi, agentApi, capabilityApi, channelApi, enterpriseApi, fileAp
 import CapabilityPackCard from '../components/CapabilityPackCard';
 import { useAuthStore } from '../stores';
 
-const TABS = ['status', 'aware', 'mind', 'tools', 'skills', 'relationships', 'workspace', 'chat', 'activityLog', 'approvals', 'settings'] as const;
+const TABS = ['status', 'aware', 'mind', 'capabilities', 'skills', 'relationships', 'workspace', 'chat', 'activityLog', 'approvals', 'settings'] as const;
 
 // Format large token numbers with K/M suffixes
 const formatTokens = (n: number) => {
@@ -45,21 +45,6 @@ const getTimelineEventPresentation = (msg: TimelineMessage) => {
         background: 'var(--bg-secondary)',
     };
 };
-
-const getCategoryLabels = (t: any): Record<string, string> => ({
-    file: t('agent.toolCategories.file'),
-    task: t('agent.toolCategories.task'),
-    communication: t('agent.toolCategories.communication'),
-    search: t('agent.toolCategories.search'),
-    aware: t('agent.toolCategories.aware', 'Aware & Triggers'),
-    social: t('agent.toolCategories.social', 'Social'),
-    code: t('agent.toolCategories.code', 'Code & Execution'),
-    discovery: t('agent.toolCategories.discovery', 'Discovery'),
-    email: t('agent.toolCategories.email', 'Email'),
-    feishu: t('agent.toolCategories.feishu', 'Feishu / Lark'),
-    custom: t('agent.toolCategories.custom'),
-    general: t('agent.toolCategories.general'),
-});
 
 type ChatMsg = TimelineMessage;
 
@@ -112,370 +97,26 @@ function ConfigVersionHistory({ agentId }: { agentId: string }) {
     );
 }
 
-function ToolsManager({ agentId, canManage = false }: { agentId: string; canManage?: boolean }) {
-    const { t } = useTranslation();
-    const [tools, setTools] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [configTool, setConfigTool] = useState<any | null>(null);
-    const [configData, setConfigData] = useState<Record<string, any>>({});
-    const [configJson, setConfigJson] = useState('');
-    const [configSaving, setConfigSaving] = useState(false);
-    const [toolTab, setToolTab] = useState<'platform' | 'installed'>('platform');
-    const [deletingToolId, setDeletingToolId] = useState<string | null>(null);
-
-    const loadTools = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`/api/v1/tools/agents/${agentId}/with-config`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (res.ok) setTools(await res.json());
-            else {
-                // Fallback to old endpoint
-                const res2 = await fetch(`/api/v1/tools/agents/${agentId}`, { headers: { Authorization: `Bearer ${token}` } });
-                if (res2.ok) setTools(await res2.json());
-            }
-        } catch (e) { console.error(e); }
-        setLoading(false);
-    };
-
-    useEffect(() => { loadTools(); }, [agentId]);
-
-    const toggleTool = async (toolId: string, enabled: boolean) => {
-        setTools(prev => prev.map(t => t.id === toolId ? { ...t, enabled } : t));
-        try {
-            const token = localStorage.getItem('token');
-            await fetch(`/api/v1/tools/agents/${agentId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify([{ tool_id: toolId, enabled }]),
-            });
-        } catch (e) { console.error(e); }
-    };
-
-    const openConfig = (tool: any) => {
-        setConfigTool(tool);
-        const merged = { ...(tool.global_config || {}), ...(tool.agent_config || {}) };
-        setConfigData(merged);
-        setConfigJson(JSON.stringify(tool.agent_config || {}, null, 2));
-    };
-
-    const saveConfig = async () => {
-        if (!configTool) return;
-        setConfigSaving(true);
-        try {
-            const token = localStorage.getItem('token');
-            const hasSchema = configTool.config_schema?.fields?.length > 0;
-            const payload = hasSchema ? configData : JSON.parse(configJson || '{}');
-            await fetch(`/api/v1/tools/agents/${agentId}/tool-config/${configTool.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ config: payload }),
-            });
-            setConfigTool(null);
-            loadTools();
-        } catch (e) { alert(t('agent.tools.saveFailed') + e); }
-        setConfigSaving(false);
-    };
-
-    if (loading) return <div style={{ color: 'var(--text-tertiary)', padding: '20px' }}>{t('common.loading')}</div>;
-
-    // Split by source first, then group by category
-    const systemTools = tools.filter(t => t.source !== 'user_installed');
-    const agentInstalledTools = tools.filter(t => t.source === 'user_installed');
-
-    const groupByCategory = (toolList: any[]) =>
-        toolList.reduce((acc: Record<string, any[]>, t) => {
-            const cat = t.category || 'general';
-            (acc[cat] = acc[cat] || []).push(t);
-            return acc;
-        }, {});
-
-    const renderToolGroup = (groupedTools: Record<string, any[]>) =>
-        Object.entries(groupedTools).map(([category, catTools]) => (
-            <div key={category}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {getCategoryLabels(t)[category] || category}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {(catTools as any[]).map((tool: any) => {
-                        const hasConfig = tool.config_schema?.fields?.length > 0 || tool.type === 'mcp';
-                        const hasAgentOverride = tool.agent_config && Object.keys(tool.agent_config).length > 0;
-                        return (
-                            <div key={tool.id} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontSize: '18px' }}>{tool.icon}</span>
-                                    <div style={{ minWidth: 0 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{t(`tools.names.${tool.name}`, tool.display_name) as string}</span>
-                                            {tool.type === 'mcp' && (
-                                                <span style={{ fontSize: '10px', background: 'var(--primary)', color: '#fff', borderRadius: '4px', padding: '1px 5px' }}>MCP</span>
-                                            )}
-                                            {tool.type === 'builtin' && (
-                                                <span style={{ fontSize: '10px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderRadius: '4px', padding: '1px 5px' }}>Built-in</span>
-                                            )}
-                                            {hasAgentOverride && (
-                                                <span style={{ fontSize: '10px', background: 'rgba(99,102,241,0.15)', color: 'var(--accent-color)', borderRadius: '4px', padding: '1px 5px' }}>Configured</span>
-                                            )}
-                                        </div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {t(`tools.descriptions.${tool.name}`, tool.description) as string}
-                                            {tool.mcp_server_name && <span> · {tool.mcp_server_name}</span>}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                                    {canManage && hasConfig && (
-                                        <button
-                                            onClick={() => openConfig(tool)}
-                                            style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                                            title="Configure per-agent settings"
-                                        >⚙️ Config</button>
-                                    )}
-                                    {canManage && tool.source === 'user_installed' && tool.agent_tool_id && (
-                                        <button
-                                            onClick={async () => {
-                                                if (!confirm(t('agent.tools.confirmDelete', `Remove "${tool.display_name}" from this agent?`))) return;
-                                                setDeletingToolId(tool.id);
-                                                try {
-                                                    const token = localStorage.getItem('token');
-                                                    const res = await fetch(`/api/v1/tools/agent-tool/${tool.agent_tool_id}`, {
-                                                        method: 'DELETE',
-                                                        headers: { Authorization: `Bearer ${token}` },
-                                                    });
-                                                    if (res.ok) await loadTools();
-                                                    else alert(t('agent.tools.deleteFailed'));
-                                                } catch (e) { alert(t('agent.tools.deleteFailed') + ': ' + e); }
-                                                setDeletingToolId(null);
-                                            }}
-                                            disabled={deletingToolId === tool.id}
-                                            style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-tertiary)', opacity: deletingToolId === tool.id ? 0.5 : 1 }}
-                                            title={t('agent.tools.removeTool', 'Remove from agent')}
-                                        >{deletingToolId === tool.id ? '...' : '✕'}</button>
-                                    )}
-                                    {canManage ? (
-                                        <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '22px', cursor: 'pointer', flexShrink: 0 }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={tool.enabled}
-                                                onChange={e => toggleTool(tool.id, e.target.checked)}
-                                                style={{ opacity: 0, width: 0, height: 0 }}
-                                            />
-                                            <span style={{
-                                                position: 'absolute', inset: 0,
-                                                background: tool.enabled ? '#22c55e' : 'var(--bg-tertiary)',
-                                                borderRadius: '11px', transition: 'background 0.2s',
-                                            }}>
-                                                <span style={{
-                                                    position: 'absolute', left: tool.enabled ? '20px' : '2px', top: '2px',
-                                                    width: '18px', height: '18px', background: '#fff',
-                                                    borderRadius: '50%', transition: 'left 0.2s',
-                                                }} />
-                                            </span>
-                                        </label>
-                                    ) : (
-                                        <span style={{ fontSize: '11px', color: tool.enabled ? '#22c55e' : 'var(--text-tertiary)', fontWeight: 500 }}>
-                                            {tool.enabled ? t('common.enabled', 'On') : t('common.disabled', 'Off')}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        ));
-
-    const activeTools = toolTab === 'platform' ? systemTools : agentInstalledTools;
-
-    return (
-        <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Tab Bar */}
-                <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-tertiary)', borderRadius: '8px', padding: '3px' }}>
-                    <button
-                        onClick={() => setToolTab('platform')}
-                        style={{
-                            flex: 1, padding: '7px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer',
-                            fontSize: '12px', fontWeight: 600, transition: 'all 0.2s',
-                            background: toolTab === 'platform' ? 'var(--bg-primary)' : 'transparent',
-                            color: toolTab === 'platform' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                            boxShadow: toolTab === 'platform' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                        }}
-                    >
-                        🔧 {t('agent.tools.platformTools', 'Platform Tools')} ({systemTools.length})
-                    </button>
-                    <button
-                        onClick={() => setToolTab('installed')}
-                        style={{
-                            flex: 1, padding: '7px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer',
-                            fontSize: '12px', fontWeight: 600, transition: 'all 0.2s',
-                            background: toolTab === 'installed' ? 'var(--bg-primary)' : 'transparent',
-                            color: toolTab === 'installed' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                            boxShadow: toolTab === 'installed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                        }}
-                    >
-                        🤖 {t('agent.tools.agentInstalled', 'Agent-Installed Tools')} ({agentInstalledTools.length})
-                    </button>
-                </div>
-
-                {/* Tool List */}
-                {activeTools.length > 0 ? (
-                    renderToolGroup(groupByCategory(activeTools))
-                ) : (
-                    <div className="card" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-tertiary)' }}>
-                        {toolTab === 'installed' ? t('agent.tools.noInstalled', 'No agent-installed tools yet') : t('common.noData')}
-                    </div>
-                )}
-            </div>
-            {tools.length === 0 && (
-                <div className="card" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-tertiary)' }}>
-                    {t('common.noData')}
-                </div>
-            )}
-
-            {/* Tool Config Modal */}
-            {configTool && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    onClick={() => setConfigTool(null)}>
-                    <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', width: '480px', maxWidth: '95vw', maxHeight: '80vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <div>
-                                <h3 style={{ margin: 0 }}>⚙️ {configTool.display_name}</h3>
-                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Per-agent configuration (overrides global defaults)</div>
-                            </div>
-                            <button onClick={() => setConfigTool(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)' }}>✕</button>
-                        </div>
-
-                        {configTool.config_schema?.fields?.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {configTool.config_schema.fields
-                                    .filter((field: any) => {
-                                        // Handle depends_on: hide fields unless dependency is met
-                                        if (!field.depends_on) return true;
-                                        return Object.entries(field.depends_on).every(([depKey, depVals]: [string, any]) =>
-                                            (depVals as string[]).includes(configData[depKey] ?? '')
-                                        );
-                                    })
-                                    .map((field: any) => (
-                                        <div key={field.key}>
-                                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
-                                                {field.label}
-                                                {configTool.global_config?.[field.key] && (
-                                                    <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: '4px' }}>
-                                                        (global: {String(configTool.global_config[field.key]).slice(0, 20)}{String(configTool.global_config[field.key]).length > 20 ? '…' : ''})
-                                                    </span>
-                                                )}
-                                            </label>
-                                            {field.type === 'password' ? (
-                                                <>
-                                                <input type="password" className="form-input" value={configData[field.key] ?? ''} placeholder={field.placeholder || t('agent.tools.useGlobalDefault')} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))} />
-                                                {/* Per-provider help text for auth_code */}
-                                                {field.key === 'auth_code' && (() => {
-                                                    const providerField = configTool.config_schema?.fields?.find((f: any) => f.key === 'email_provider');
-                                                    const selectedProvider = configData['email_provider'] || providerField?.default || '';
-                                                    const providerOption = providerField?.options?.find((o: any) => o.value === selectedProvider);
-                                                    if (!providerOption?.help_text) return null;
-                                                    return (
-                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', lineHeight: '1.5' }}>
-                                                            {providerOption.help_text}
-                                                            {providerOption.help_url && (
-                                                                <> &middot; <a href={providerOption.help_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>Setup guide</a></>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })()}
-                                                </>
-                                            ) : field.type === 'select' ? (
-                                                <select className="form-input" value={configData[field.key] ?? field.default ?? ''} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))}>
-                                                    {(field.options || []).map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                                </select>
-                                            ) : field.type === 'number' ? (
-                                                <input type="number" className="form-input" value={configData[field.key] ?? field.default ?? ''} placeholder={field.placeholder || ''} min={field.min} max={field.max} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value ? Number(e.target.value) : '' }))} />
-                                            ) : (
-                                                <input type="text" className="form-input" value={configData[field.key] ?? ''} placeholder={field.placeholder || t('agent.tools.useGlobalDefault')} onChange={e => setConfigData(p => ({ ...p, [field.key]: e.target.value }))} />
-                                            )}
-                                        </div>
-                                    ))}
-                                {/* Email tool: test connection button + help text */}
-                                {configTool.category === 'email' && (
-                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <button
-                                            className="btn btn-secondary"
-                                            style={{ alignSelf: 'flex-start' }}
-                                            onClick={async () => {
-                                                const btn = document.getElementById('email-test-btn');
-                                                const status = document.getElementById('email-test-status');
-                                                if (btn) btn.textContent = t('agent.tools.testing');
-                                                if (btn) (btn as HTMLButtonElement).disabled = true;
-                                                try {
-                                                    const token = localStorage.getItem('token');
-                                                    const res = await fetch('/api/v1/tools/test-email', {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                                        body: JSON.stringify({ config: configData }),
-                                                    });
-                                                    const data = await res.json();
-                                                    if (status) {
-                                                        status.textContent = data.ok
-                                                            ? `${data.imap}\n${data.smtp}`
-                                                            : `${data.imap || ''}\n${data.smtp || ''}\n${data.error || ''}`;
-                                                        status.style.color = data.ok ? 'var(--success)' : 'var(--error)';
-                                                    }
-                                                } catch (e: any) {
-                                                    if (status) { status.textContent = `Error: ${e.message}`; status.style.color = 'var(--error)'; }
-                                                } finally {
-                                                    if (btn) { btn.textContent = t('agent.tools.testConnection'); (btn as HTMLButtonElement).disabled = false; }
-                                                }
-                                            }}
-                                            id="email-test-btn"
-                                        >{t('agent.tools.testConnection')}</button>
-                                        <div id="email-test-status" style={{ fontSize: '11px', whiteSpace: 'pre-line', minHeight: '16px' }}></div>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div>
-                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>Config JSON (Agent Override)</label>
-                                <textarea
-                                    className="form-input"
-                                    value={configJson}
-                                    onChange={e => setConfigJson(e.target.value)}
-                                    style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', minHeight: '120px', resize: 'vertical' }}
-                                    placeholder='{}'
-                                />
-                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                                    Global default: <code style={{ fontSize: '10px' }}>{JSON.stringify(configTool.global_config || {}).slice(0, 80)}</code>
-                                </div>
-                            </div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                            {Object.keys(configTool.agent_config || {}).length > 0 && (
-                                <button className="btn btn-ghost" style={{ color: 'var(--error)', marginRight: 'auto' }} onClick={async () => {
-                                    const token = localStorage.getItem('token');
-                                    await fetch(`/api/v1/tools/agents/${agentId}/tool-config/${configTool.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ config: {} }) });
-                                    setConfigTool(null); loadTools();
-                                }}>{t('agent.tools.resetToGlobal')}</button>
-                            )}
-                            <button className="btn btn-secondary" onClick={() => setConfigTool(null)}>{t('common.cancel')}</button>
-                            <button className="btn btn-primary" onClick={saveConfig} disabled={configSaving}>{configSaving ? t('agent.soul.saving') : t('common.save')}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
-}
-
 function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: boolean }) {
     const { t } = useTranslation();
     const [sessionExpanded, setSessionExpanded] = useState(false);
+    const sessionScope = canManage ? 'all' : 'mine';
 
     const { data: capSummary, isLoading } = useQuery({
         queryKey: ['capability-summary', agentId],
         queryFn: () => packApi.capabilitySummary(agentId),
         enabled: !!agentId,
+    });
+    const { data: sessions = [] } = useQuery({
+        queryKey: ['capability-sessions', agentId, sessionScope],
+        queryFn: () => fetchAuth<any[]>(`/agents/${agentId}/sessions?scope=${sessionScope}`),
+        enabled: !!agentId,
+    });
+    const latestSessionId = sessions[0]?.id as string | undefined;
+    const { data: runtimeSummary, isLoading: runtimeLoading } = useQuery({
+        queryKey: ['capability-runtime-summary', latestSessionId],
+        queryFn: () => packApi.sessionRuntime(latestSessionId!),
+        enabled: sessionExpanded && !!latestSessionId,
     });
 
     if (isLoading || !capSummary) {
@@ -554,16 +195,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                 )}
             </div>
 
-            {/* Section 3: Installed MCP / External (existing ToolsManager) */}
-            <div>
-                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.installed')}</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
-                    {t('agent.toolMgmt.description')}
-                </p>
-                <ToolsManager agentId={agentId} canManage={canManage} />
-            </div>
-
-            {/* Section 4: Session Activations (collapsible) */}
+            {/* Section 3: Session Activations (collapsible) */}
             <details
                 className="card"
                 open={sessionExpanded}
@@ -584,10 +216,379 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                     <span style={{ transition: 'transform 0.15s', display: 'inline-block', transform: sessionExpanded ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>&#x25B6;</span>
                     {t('enterprise.packs.sessionActivations')}
                 </summary>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
-                    {t('enterprise.packs.description')}
-                </p>
+                {!latestSessionId ? (
+                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
+                        No chat session found yet. Session-level activations will appear after the first conversation.
+                    </p>
+                ) : runtimeLoading || !runtimeSummary ? (
+                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
+                        {t('common.loading')}
+                    </p>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Activated Packs</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {runtimeSummary.activated_packs.length > 0 ? runtimeSummary.activated_packs.map((pack: string) => (
+                                    <span
+                                        key={pack}
+                                        style={{
+                                            fontSize: '11px',
+                                            padding: '3px 10px',
+                                            borderRadius: '999px',
+                                            background: 'rgba(59,130,246,0.12)',
+                                            color: '#60a5fa',
+                                            border: '1px solid rgba(59,130,246,0.25)',
+                                        }}
+                                    >
+                                        {pack}
+                                    </span>
+                                )) : (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>No capability packs activated in the latest session.</span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Used Tools</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {runtimeSummary.used_tools.length > 0 ? runtimeSummary.used_tools.map((tool: string) => (
+                                    <span
+                                        key={tool}
+                                        style={{
+                                            fontSize: '11px',
+                                            padding: '3px 10px',
+                                            borderRadius: '4px',
+                                            background: 'var(--bg-secondary)',
+                                            color: 'var(--text-secondary)',
+                                            border: '1px solid var(--border-subtle)',
+                                            fontFamily: 'var(--font-mono)',
+                                        }}
+                                    >
+                                        {tool}
+                                    </span>
+                                )) : (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>No tool calls recorded in the latest session.</span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                            <div style={{ minWidth: '180px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Blocked Capabilities</div>
+                                {runtimeSummary.blocked_capabilities.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        {runtimeSummary.blocked_capabilities.map((item: any, index: number) => (
+                                            <div
+                                                key={`${item.tool || 'unknown'}-${index}`}
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    borderRadius: '8px',
+                                                    background: 'rgba(245,158,11,0.10)',
+                                                    border: '1px solid rgba(245,158,11,0.20)',
+                                                    fontSize: '11px',
+                                                    color: 'var(--text-secondary)',
+                                                }}
+                                            >
+                                                <div style={{ fontWeight: 600 }}>{item.capability || item.tool || 'blocked'}</div>
+                                                <div style={{ color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                                                    {item.tool ? `${item.tool} · ` : ''}{item.status}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>No capability blocks recorded.</span>
+                                )}
+                            </div>
+
+                            <div style={{ minWidth: '180px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Compactions</div>
+                                <div
+                                    style={{
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        background: 'var(--bg-secondary)',
+                                        border: '1px solid var(--border-subtle)',
+                                        fontSize: '20px',
+                                        fontWeight: 700,
+                                    }}
+                                >
+                                    {runtimeSummary.compaction_count}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </details>
+        </div>
+    );
+}
+
+function CapabilityPolicyManager({ agentId }: { agentId: string }) {
+    const { t } = useTranslation();
+    const qc = useQueryClient();
+    const [capSaving, setCapSaving] = useState<string | null>(null);
+    const [addingCapability, setAddingCapability] = useState(false);
+    const [selectedNewCap, setSelectedNewCap] = useState('');
+
+    const { data: capDefs = [], isLoading: defsLoading } = useQuery({
+        queryKey: ['agent-capability-definitions'],
+        queryFn: () => capabilityApi.definitions(),
+        enabled: !!agentId,
+    });
+    const { data: agentPolicies = [], isLoading: policiesLoading } = useQuery({
+        queryKey: ['agent-capability-policies', agentId],
+        queryFn: () => capabilityApi.list(agentId),
+        enabled: !!agentId,
+    });
+
+    const configuredCaps = new Set(agentPolicies.map((p: any) => p.capability));
+    const unconfiguredDefs = capDefs.filter((d: any) => !configuredCaps.has(d.capability));
+
+    const getToolsForCapability = (cap: string) => {
+        const def = capDefs.find((d: any) => d.capability === cap);
+        return def?.tools || [];
+    };
+
+    const handleUpsert = async (capability: string, allowed: boolean, requiresApproval: boolean) => {
+        setCapSaving(capability);
+        try {
+            await capabilityApi.upsert({
+                capability,
+                agent_id: agentId,
+                allowed,
+                requires_approval: requiresApproval,
+            });
+            await qc.invalidateQueries({ queryKey: ['agent-capability-policies', agentId] });
+            await qc.invalidateQueries({ queryKey: ['capability-summary', agentId] });
+        } finally {
+            setCapSaving(null);
+        }
+    };
+
+    const handleDelete = async (policy: any) => {
+        setCapSaving(policy.capability);
+        try {
+            await capabilityApi.delete(policy.id);
+            await qc.invalidateQueries({ queryKey: ['agent-capability-policies', agentId] });
+            await qc.invalidateQueries({ queryKey: ['capability-summary', agentId] });
+        } finally {
+            setCapSaving(null);
+        }
+    };
+
+    const handleAddNew = async () => {
+        if (!selectedNewCap) return;
+        await handleUpsert(selectedNewCap, true, false);
+        setSelectedNewCap('');
+        setAddingCapability(false);
+    };
+
+    if (defsLoading || policiesLoading) {
+        return (
+            <div className="card" style={{ marginBottom: '12px' }}>
+                <h4 style={{ marginBottom: '4px' }}>{t('agent.settings.capabilityPolicy.title')}</h4>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '12px 0' }}>{t('common.loading')}</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="card" style={{ marginBottom: '12px' }}>
+            <h4 style={{ marginBottom: '4px' }}>{t('agent.settings.capabilityPolicy.title')}</h4>
+            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
+                {t('agent.settings.capabilityPolicy.description')}
+            </p>
+
+            {capDefs.length === 0 ? (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '12px 0' }}>
+                    {t('agent.settings.capabilityPolicy.noDefinitions')}
+                </div>
+            ) : (
+                <>
+                    {agentPolicies.length === 0 && (
+                        <div style={{
+                            fontSize: '12px', color: 'var(--text-tertiary)',
+                            padding: '12px 14px', background: 'var(--bg-elevated)',
+                            borderRadius: '8px', border: '1px solid var(--border-subtle)',
+                            marginBottom: '10px',
+                        }}>
+                            {t('agent.settings.capabilityPolicy.noPolicies')}
+                        </div>
+                    )}
+
+                    {agentPolicies.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr 100px 120px 60px',
+                                gap: '8px',
+                                padding: '6px 14px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: 'var(--text-tertiary)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                            }}>
+                                <span>{t('agent.settings.capabilityPolicy.capability')}</span>
+                                <span>{t('agent.settings.capabilityPolicy.tools')}</span>
+                                <span>{t('agent.settings.capabilityPolicy.status')}</span>
+                                <span>{t('agent.settings.capabilityPolicy.approval')}</span>
+                                <span>{t('agent.settings.capabilityPolicy.actions')}</span>
+                            </div>
+
+                            {agentPolicies.map((policy: any) => {
+                                const tools = getToolsForCapability(policy.capability);
+                                const isSaving = capSaving === policy.capability;
+                                return (
+                                    <div key={policy.id} style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr 100px 120px 60px',
+                                        gap: '8px',
+                                        alignItems: 'center',
+                                        padding: '10px 14px',
+                                        background: 'var(--bg-elevated)',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--border-subtle)',
+                                        opacity: isSaving ? 0.6 : 1,
+                                        transition: 'opacity 0.15s',
+                                    }}>
+                                        <div style={{
+                                            fontWeight: 500, fontSize: '13px',
+                                            fontFamily: 'var(--font-mono)',
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        }}>
+                                            {policy.capability}
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {tools.slice(0, 3).map((tool: string) => (
+                                                <span key={tool} style={{
+                                                    fontSize: '10px', padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'var(--bg-secondary)',
+                                                    color: 'var(--text-tertiary)',
+                                                    fontFamily: 'var(--font-mono)',
+                                                    border: '1px solid var(--border-subtle)',
+                                                }}>
+                                                    {tool}
+                                                </span>
+                                            ))}
+                                            {tools.length > 3 && (
+                                                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                                                    +{tools.length - 3}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <button
+                                            disabled={isSaving}
+                                            onClick={() => handleUpsert(policy.capability, !policy.allowed, policy.requires_approval)}
+                                            style={{
+                                                padding: '4px 10px', borderRadius: '6px',
+                                                fontSize: '11px', fontWeight: 600,
+                                                border: '1px solid',
+                                                cursor: isSaving ? 'default' : 'pointer',
+                                                background: policy.allowed ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                                color: policy.allowed ? 'var(--success)' : 'var(--error)',
+                                                borderColor: policy.allowed ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
+                                            }}
+                                        >
+                                            {policy.allowed
+                                                ? t('agent.settings.capabilityPolicy.allowed')
+                                                : t('agent.settings.capabilityPolicy.denied')}
+                                        </button>
+
+                                        <label style={{
+                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                            fontSize: '11px', color: 'var(--text-secondary)',
+                                            cursor: isSaving ? 'default' : 'pointer',
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={policy.requires_approval}
+                                                disabled={isSaving}
+                                                onChange={(e) => handleUpsert(policy.capability, policy.allowed, e.target.checked)}
+                                                style={{ accentColor: 'var(--accent-primary)' }}
+                                            />
+                                            {t('agent.settings.capabilityPolicy.requiresApproval')}
+                                        </label>
+
+                                        <button
+                                            disabled={isSaving}
+                                            onClick={() => handleDelete(policy)}
+                                            title={t('agent.settings.capabilityPolicy.delete')}
+                                            style={{
+                                                padding: '4px 8px', borderRadius: '6px',
+                                                fontSize: '11px', cursor: isSaving ? 'default' : 'pointer',
+                                                background: 'none', border: '1px solid var(--border-subtle)',
+                                                color: 'var(--text-tertiary)',
+                                            }}
+                                        >
+                                            {t('agent.settings.capabilityPolicy.delete')}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {addingCapability ? (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 14px', background: 'var(--bg-elevated)',
+                            borderRadius: '8px', border: '1px solid var(--accent-primary)',
+                        }}>
+                            <select
+                                className="input"
+                                value={selectedNewCap}
+                                onChange={(e) => setSelectedNewCap(e.target.value)}
+                                style={{ flex: 1, fontSize: '12px' }}
+                            >
+                                <option value="">{t('agent.settings.capabilityPolicy.selectCapability')}</option>
+                                {unconfiguredDefs.map((def: any) => (
+                                    <option key={def.capability} value={def.capability}>
+                                        {def.capability}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                className="btn btn-primary"
+                                disabled={!selectedNewCap || capSaving !== null}
+                                onClick={handleAddNew}
+                                style={{ padding: '5px 14px', fontSize: '12px' }}
+                            >
+                                {t('agent.settings.capabilityPolicy.addPolicy')}
+                            </button>
+                            <button
+                                style={{
+                                    background: 'none', border: 'none',
+                                    cursor: 'pointer', color: 'var(--text-tertiary)',
+                                    fontSize: '16px', lineHeight: 1,
+                                }}
+                                onClick={() => { setAddingCapability(false); setSelectedNewCap(''); }}
+                            >
+                                x
+                            </button>
+                        </div>
+                    ) : unconfiguredDefs.length > 0 && (
+                        <button
+                            onClick={() => setAddingCapability(true)}
+                            style={{
+                                padding: '8px 14px', borderRadius: '8px',
+                                border: '1px dashed var(--border-subtle)',
+                                background: 'none', cursor: 'pointer',
+                                color: 'var(--accent-primary)', fontSize: '12px',
+                                fontWeight: 500, width: '100%',
+                                transition: 'border-color 0.15s',
+                            }}
+                        >
+                            + {t('agent.settings.capabilityPolicy.addPolicy')}
+                        </button>
+                    )}
+                </>
+            )}
         </div>
     );
 }
@@ -876,7 +877,7 @@ function AgentDetailInner() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const location = useLocation();
-    const validTabs = ['status', 'aware', 'mind', 'tools', 'skills', 'relationships', 'workspace', 'chat', 'activityLog', 'approvals', 'settings'];
+    const validTabs = ['status', 'aware', 'mind', 'capabilities', 'skills', 'relationships', 'workspace', 'chat', 'activityLog', 'approvals', 'settings'];
     const hashTab = location.hash?.replace('#', '');
     const [activeTab, setActiveTabRaw] = useState<string>(hashTab && validTabs.includes(hashTab) ? hashTab : 'status');
 
@@ -2772,9 +2773,9 @@ function AgentDetailInner() {
                     })()
                 }
 
-                {/* ── Tools Tab (Capabilities View) ── */}
+                {/* ── Capabilities Tab ── */}
                 {
-                    activeTab === 'tools' && (
+                    activeTab === 'capabilities' && (
                         <CapabilitiesView agentId={id!} canManage={canManage} />
                     )
                 }
@@ -4098,360 +4099,8 @@ function AgentDetailInner() {
                                 })()}
 
                                 {/* Capability Policy — native agents only */}
-                                {(agent as any)?.agent_type !== 'openclaw' && (() => {
-                                    const [capDefs, setCapDefs] = useState<any[]>([]);
-                                    const [capPolicies, setCapPolicies] = useState<any[]>([]);
-                                    const [capLoading, setCapLoading] = useState(true);
-                                    const [capSaving, setCapSaving] = useState<string | null>(null);
-                                    const [addingCapability, setAddingCapability] = useState(false);
-                                    const [selectedNewCap, setSelectedNewCap] = useState('');
-
-                                    useEffect(() => {
-                                        let cancelled = false;
-                                        const load = async () => {
-                                            setCapLoading(true);
-                                            try {
-                                                const [defs, policies] = await Promise.all([
-                                                    capabilityApi.definitions(),
-                                                    capabilityApi.list(id!),
-                                                ]);
-                                                if (!cancelled) {
-                                                    setCapDefs(defs || []);
-                                                    setCapPolicies(policies || []);
-                                                }
-                                            } catch {
-                                                if (!cancelled) {
-                                                    setCapDefs([]);
-                                                    setCapPolicies([]);
-                                                }
-                                            } finally {
-                                                if (!cancelled) setCapLoading(false);
-                                            }
-                                        };
-                                        load();
-                                        return () => { cancelled = true; };
-                                    }, [id]);
-
-                                    const agentPolicies = capPolicies.filter((p: any) => p.agent_id === id);
-                                    const configuredCaps = new Set(agentPolicies.map((p: any) => p.capability));
-                                    const unconfiguredDefs = capDefs.filter((d: any) => !configuredCaps.has(d.capability));
-
-                                    const handleUpsert = async (capability: string, allowed: boolean, requiresApproval: boolean) => {
-                                        setCapSaving(capability);
-                                        try {
-                                            const result = await capabilityApi.upsert({
-                                                capability,
-                                                agent_id: id!,
-                                                allowed,
-                                                requires_approval: requiresApproval,
-                                            });
-                                            setCapPolicies(prev => {
-                                                const idx = prev.findIndex((p: any) => p.capability === capability && p.agent_id === id);
-                                                if (idx >= 0) {
-                                                    const next = [...prev];
-                                                    next[idx] = result;
-                                                    return next;
-                                                }
-                                                return [...prev, result];
-                                            });
-                                        } finally {
-                                            setCapSaving(null);
-                                        }
-                                    };
-
-                                    const handleDelete = async (policy: any) => {
-                                        setCapSaving(policy.capability);
-                                        try {
-                                            await capabilityApi.delete(policy.id);
-                                            setCapPolicies(prev => prev.filter((p: any) => p.id !== policy.id));
-                                        } finally {
-                                            setCapSaving(null);
-                                        }
-                                    };
-
-                                    const handleAddNew = async () => {
-                                        if (!selectedNewCap) return;
-                                        await handleUpsert(selectedNewCap, true, false);
-                                        setSelectedNewCap('');
-                                        setAddingCapability(false);
-                                    };
-
-                                    const getToolsForCapability = (cap: string) => {
-                                        const def = capDefs.find((d: any) => d.capability === cap);
-                                        return def?.tools || [];
-                                    };
-
-                                    return (
-                                        <div className="card" style={{ marginBottom: '12px' }}>
-                                            <h4 style={{ marginBottom: '4px' }}>{t('agent.settings.capabilityPolicy.title')}</h4>
-                                            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
-                                                {t('agent.settings.capabilityPolicy.description')}
-                                            </p>
-
-                                            {capLoading ? (
-                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '12px 0' }}>{t('common.loading')}</div>
-                                            ) : capDefs.length === 0 ? (
-                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '12px 0' }}>
-                                                    {t('agent.settings.capabilityPolicy.noDefinitions')}
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    {agentPolicies.length === 0 && (
-                                                        <div style={{
-                                                            fontSize: '12px', color: 'var(--text-tertiary)',
-                                                            padding: '12px 14px', background: 'var(--bg-elevated)',
-                                                            borderRadius: '8px', border: '1px solid var(--border-subtle)',
-                                                            marginBottom: '10px',
-                                                        }}>
-                                                            {t('agent.settings.capabilityPolicy.noPolicies')}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Policy table */}
-                                                    {agentPolicies.length > 0 && (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-                                                            {/* Header row */}
-                                                            <div style={{
-                                                                display: 'grid',
-                                                                gridTemplateColumns: '1fr 1fr 100px 120px 60px',
-                                                                gap: '8px',
-                                                                padding: '6px 14px',
-                                                                fontSize: '11px',
-                                                                fontWeight: 600,
-                                                                color: 'var(--text-tertiary)',
-                                                                textTransform: 'uppercase',
-                                                                letterSpacing: '0.5px',
-                                                            }}>
-                                                                <span>{t('agent.settings.capabilityPolicy.capability')}</span>
-                                                                <span>{t('agent.settings.capabilityPolicy.tools')}</span>
-                                                                <span>{t('agent.settings.capabilityPolicy.status')}</span>
-                                                                <span>{t('agent.settings.capabilityPolicy.approval')}</span>
-                                                                <span>{t('agent.settings.capabilityPolicy.actions')}</span>
-                                                            </div>
-
-                                                            {/* Data rows */}
-                                                            {agentPolicies.map((policy: any) => {
-                                                                const tools = getToolsForCapability(policy.capability);
-                                                                const isSaving = capSaving === policy.capability;
-                                                                return (
-                                                                    <div key={policy.id} style={{
-                                                                        display: 'grid',
-                                                                        gridTemplateColumns: '1fr 1fr 100px 120px 60px',
-                                                                        gap: '8px',
-                                                                        alignItems: 'center',
-                                                                        padding: '10px 14px',
-                                                                        background: 'var(--bg-elevated)',
-                                                                        borderRadius: '8px',
-                                                                        border: '1px solid var(--border-subtle)',
-                                                                        opacity: isSaving ? 0.6 : 1,
-                                                                        transition: 'opacity 0.15s',
-                                                                    }}>
-                                                                        {/* Capability name */}
-                                                                        <div style={{
-                                                                            fontWeight: 500, fontSize: '13px',
-                                                                            fontFamily: 'var(--font-mono)',
-                                                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                                                        }}>
-                                                                            {policy.capability}
-                                                                        </div>
-
-                                                                        {/* Related tools */}
-                                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                                                            {tools.slice(0, 3).map((tool: string) => (
-                                                                                <span key={tool} style={{
-                                                                                    fontSize: '10px', padding: '2px 6px',
-                                                                                    borderRadius: '4px',
-                                                                                    background: 'var(--bg-secondary)',
-                                                                                    color: 'var(--text-tertiary)',
-                                                                                    fontFamily: 'var(--font-mono)',
-                                                                                    border: '1px solid var(--border-subtle)',
-                                                                                }}>
-                                                                                    {tool}
-                                                                                </span>
-                                                                            ))}
-                                                                            {tools.length > 3 && (
-                                                                                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                                                                                    +{tools.length - 3}
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-
-                                                                        {/* Allowed/Denied toggle */}
-                                                                        <button
-                                                                            disabled={isSaving}
-                                                                            onClick={() => handleUpsert(policy.capability, !policy.allowed, policy.requires_approval)}
-                                                                            style={{
-                                                                                padding: '4px 10px', borderRadius: '6px',
-                                                                                fontSize: '11px', fontWeight: 600,
-                                                                                border: '1px solid',
-                                                                                cursor: isSaving ? 'default' : 'pointer',
-                                                                                background: policy.allowed ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                                                                                color: policy.allowed ? 'var(--success)' : 'var(--error)',
-                                                                                borderColor: policy.allowed ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
-                                                                            }}
-                                                                        >
-                                                                            {policy.allowed
-                                                                                ? t('agent.settings.capabilityPolicy.allowed')
-                                                                                : t('agent.settings.capabilityPolicy.denied')}
-                                                                        </button>
-
-                                                                        {/* Requires approval checkbox */}
-                                                                        <label style={{
-                                                                            display: 'flex', alignItems: 'center', gap: '6px',
-                                                                            fontSize: '11px', color: 'var(--text-secondary)',
-                                                                            cursor: isSaving ? 'default' : 'pointer',
-                                                                        }}>
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={policy.requires_approval}
-                                                                                disabled={isSaving}
-                                                                                onChange={(e) => handleUpsert(policy.capability, policy.allowed, e.target.checked)}
-                                                                                style={{ accentColor: 'var(--accent-primary)' }}
-                                                                            />
-                                                                            {t('agent.settings.capabilityPolicy.requiresApproval')}
-                                                                        </label>
-
-                                                                        {/* Delete button */}
-                                                                        <button
-                                                                            disabled={isSaving}
-                                                                            onClick={() => handleDelete(policy)}
-                                                                            title={t('agent.settings.capabilityPolicy.delete')}
-                                                                            style={{
-                                                                                padding: '4px 8px', borderRadius: '6px',
-                                                                                fontSize: '11px', cursor: isSaving ? 'default' : 'pointer',
-                                                                                background: 'none', border: '1px solid var(--border-subtle)',
-                                                                                color: 'var(--text-tertiary)',
-                                                                            }}
-                                                                        >
-                                                                            {t('agent.settings.capabilityPolicy.delete')}
-                                                                        </button>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Add Policy */}
-                                                    {addingCapability ? (
-                                                        <div style={{
-                                                            display: 'flex', alignItems: 'center', gap: '8px',
-                                                            padding: '10px 14px', background: 'var(--bg-elevated)',
-                                                            borderRadius: '8px', border: '1px solid var(--accent-primary)',
-                                                        }}>
-                                                            <select
-                                                                className="input"
-                                                                value={selectedNewCap}
-                                                                onChange={(e) => setSelectedNewCap(e.target.value)}
-                                                                style={{ flex: 1, fontSize: '12px' }}
-                                                            >
-                                                                <option value="">{t('agent.settings.capabilityPolicy.selectCapability')}</option>
-                                                                {unconfiguredDefs.map((def: any) => (
-                                                                    <option key={def.capability} value={def.capability}>
-                                                                        {def.capability}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                            <button
-                                                                className="btn btn-primary"
-                                                                disabled={!selectedNewCap || capSaving !== null}
-                                                                onClick={handleAddNew}
-                                                                style={{ padding: '5px 14px', fontSize: '12px' }}
-                                                            >
-                                                                {t('agent.settings.capabilityPolicy.addPolicy')}
-                                                            </button>
-                                                            <button
-                                                                style={{
-                                                                    background: 'none', border: 'none',
-                                                                    cursor: 'pointer', color: 'var(--text-tertiary)',
-                                                                    fontSize: '16px', lineHeight: 1,
-                                                                }}
-                                                                onClick={() => { setAddingCapability(false); setSelectedNewCap(''); }}
-                                                            >
-                                                                x
-                                                            </button>
-                                                        </div>
-                                                    ) : unconfiguredDefs.length > 0 && (
-                                                        <button
-                                                            onClick={() => setAddingCapability(true)}
-                                                            style={{
-                                                                padding: '8px 14px', borderRadius: '8px',
-                                                                border: '1px dashed var(--border-subtle)',
-                                                                background: 'none', cursor: 'pointer',
-                                                                color: 'var(--accent-primary)', fontSize: '12px',
-                                                                fontWeight: 500, width: '100%',
-                                                                transition: 'border-color 0.15s',
-                                                            }}
-                                                        >
-                                                            + {t('agent.settings.capabilityPolicy.addPolicy')}
-                                                        </button>
-                                                    )}
-                                                </>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
-
-                                {/* Legacy Autonomy Policy — native agents only, collapsed and de-emphasized */}
                                 {(agent as any)?.agent_type !== 'openclaw' && (
-                                    <details className="card" style={{
-                                        marginBottom: '12px',
-                                        opacity: 0.7,
-                                        borderColor: 'var(--border-subtle)',
-                                    }}>
-                                        <summary style={{
-                                            cursor: 'pointer', fontWeight: 500, fontSize: '13px',
-                                            listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px',
-                                            color: 'var(--text-secondary)',
-                                        }}>
-                                            <span style={{ fontSize: '10px', transition: 'transform 0.15s', display: 'inline-block' }}>&#x25B6;</span>
-                                            {t('agent.settings.autonomy.legacyTitle')}
-                                        </summary>
-                                        <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', margin: '8px 0 12px', fontStyle: 'italic' }}>
-                                            {t('agent.settings.autonomy.legacyInfo')}
-                                        </p>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                            {[
-                                                { key: 'read_files', label: t('agent.settings.autonomy.readFiles'), desc: t('agent.settings.autonomy.readFilesDesc') },
-                                                { key: 'write_workspace_files', label: t('agent.settings.autonomy.writeFiles'), desc: t('agent.settings.autonomy.writeFilesDesc') },
-                                                { key: 'delete_files', label: t('agent.settings.autonomy.deleteFiles'), desc: t('agent.settings.autonomy.deleteFilesDesc') },
-                                                { key: 'send_feishu_message', label: t('agent.settings.autonomy.sendFeishu'), desc: t('agent.settings.autonomy.sendFeishuDesc') },
-                                                { key: 'web_search', label: t('agent.settings.autonomy.webSearch'), desc: t('agent.settings.autonomy.webSearchDesc') },
-                                                { key: 'manage_tasks', label: t('agent.settings.autonomy.manageTasks'), desc: t('agent.settings.autonomy.manageTasksDesc') },
-                                            ].map((action) => {
-                                                const currentLevel = (agent?.autonomy_policy as any)?.[action.key] || 'L1';
-                                                return (
-                                                    <div key={action.key} style={{
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                        padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: '8px',
-                                                        border: '1px solid var(--border-subtle)',
-                                                    }}>
-                                                        <div style={{ flex: 1 }}>
-                                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{action.label}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{action.desc}</div>
-                                                        </div>
-                                                        <select
-                                                            className="input"
-                                                            value={currentLevel}
-                                                            onChange={async (e) => {
-                                                                const newPolicy = { ...(agent?.autonomy_policy as any || {}), [action.key]: e.target.value };
-                                                                await agentApi.update(id!, { autonomy_policy: newPolicy } as any);
-                                                                queryClient.invalidateQueries({ queryKey: ['agent', id] });
-                                                            }}
-                                                            style={{
-                                                                width: '140px', fontSize: '12px',
-                                                                color: currentLevel === 'L1' ? 'var(--success)' : currentLevel === 'L2' ? 'var(--warning)' : 'var(--error)',
-                                                                fontWeight: 600,
-                                                            }}
-                                                        >
-                                                            <option value="L1">{t('agent.settings.autonomy.l1Auto')}</option>
-                                                            <option value="L2">{t('agent.settings.autonomy.l2Notify')}</option>
-                                                            <option value="L3">{t('agent.settings.autonomy.l3Approve')}</option>
-                                                        </select>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </details>
+                                    <CapabilityPolicyManager agentId={id!} />
                                 )}
 
                                 {/* Permission Management */}

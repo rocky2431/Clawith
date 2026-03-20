@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --experimental-strip-types --test src/lib/chatParts.test.ts",
+    "test": "node --experimental-strip-types --test src/lib/*.test.ts",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

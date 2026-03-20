@@ -36,14 +36,6 @@ DEFAULT_TEMPLATES = [
 - External communications on behalf of the company need sign-off
 """,
         "default_skills": [],
-        "default_autonomy_policy": {
-            "read_files": "L1",
-            "write_workspace_files": "L1",
-            "send_feishu_message": "L2",
-            "delete_files": "L2",
-            "web_search": "L1",
-            "manage_tasks": "L1",
-        },
     },
     {
         "name": "Designer",
@@ -73,13 +65,6 @@ DEFAULT_TEMPLATES = [
 - Design source file management follows team conventions
 """,
         "default_skills": [],
-        "default_autonomy_policy": {
-            "read_files": "L1",
-            "write_workspace_files": "L1",
-            "send_feishu_message": "L2",
-            "delete_files": "L2",
-            "web_search": "L1",
-        },
     },
     {
         "name": "Product Intern",
@@ -109,13 +94,6 @@ DEFAULT_TEMPLATES = [
 - User privacy data must be anonymized
 """,
         "default_skills": [],
-        "default_autonomy_policy": {
-            "read_files": "L1",
-            "write_workspace_files": "L1",
-            "send_feishu_message": "L2",
-            "delete_files": "L2",
-            "web_search": "L1",
-        },
     },
     {
         "name": "Market Researcher",
@@ -146,13 +124,6 @@ DEFAULT_TEMPLATES = [
 - External research reports require approval before distribution
 """,
         "default_skills": [],
-        "default_autonomy_policy": {
-            "read_files": "L1",
-            "write_workspace_files": "L1",
-            "send_feishu_message": "L2",
-            "delete_files": "L2",
-            "web_search": "L1",
-        },
     },
 ]
 
@@ -199,7 +170,6 @@ async def seed_agent_templates():
                     existing.category = tmpl["category"]
                     existing.soul_template = tmpl["soul_template"]
                     existing.default_skills = tmpl["default_skills"]
-                    existing.default_autonomy_policy = tmpl["default_autonomy_policy"]
                 else:
                     db.add(AgentTemplate(
                         name=tmpl["name"],
@@ -209,7 +179,6 @@ async def seed_agent_templates():
                         is_builtin=True,
                         soul_template=tmpl["soul_template"],
                         default_skills=tmpl["default_skills"],
-                        default_autonomy_policy=tmpl["default_autonomy_policy"],
                     ))
                     logger.info(f"[TemplateSeeder] Created template: {tmpl['name']}")
             await db.commit()

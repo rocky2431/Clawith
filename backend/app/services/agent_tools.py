@@ -1262,7 +1262,7 @@ async def _execute_tool_direct(
     arguments: dict,
     agent_id: uuid.UUID,
 ) -> str:
-    """Execute a tool directly, bypassing autonomy checks.
+    """Execute a tool directly, bypassing approval preflight checks.
 
     Used by the approval post-processing hook after an action
     has been approved and needs to actually run.

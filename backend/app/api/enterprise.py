@@ -28,7 +28,7 @@ from app.schemas.schemas import (
     LLMModelOut,
     LLMModelUpdate,
 )
-from app.services.autonomy_service import autonomy_service
+from app.services.approval_service import approval_service
 from app.services.enterprise_sync import enterprise_sync_service
 from app.services.llm_utils import get_provider_manifest
 
@@ -369,7 +369,7 @@ async def resolve_approval(
 ):
     """Approve or reject a pending approval request."""
     try:
-        approval = await autonomy_service.resolve_approval(db, approval_id, current_user, data.action)
+        approval = await approval_service.resolve_approval(db, approval_id, current_user, data.action)
         return ApprovalRequestOut.model_validate(approval)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

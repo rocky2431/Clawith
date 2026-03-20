@@ -1,6 +1,16 @@
 """Tests for pack_service — catalog, agent packs, capability summary."""
 
-from app.services.pack_service import KERNEL_TOOLS, get_pack_catalog
+import json
+import uuid
+from types import SimpleNamespace
+
+from app.services.agent_tools import CORE_TOOL_NAMES
+from app.services.pack_service import (
+    KERNEL_TOOLS,
+    _resolve_session_conversation_id,
+    _summarize_chat_messages,
+    get_pack_catalog,
+)
 
 
 def test_pack_catalog_returns_all_packs():
@@ -46,3 +56,68 @@ def test_kernel_tools_are_strings():
     assert "write_file" in KERNEL_TOOLS
     assert "load_skill" in KERNEL_TOOLS
     assert "tool_search" in KERNEL_TOOLS
+
+
+def test_kernel_tools_match_runtime_core_tools():
+    assert set(KERNEL_TOOLS) == set(CORE_TOOL_NAMES)
+    assert "list_files" not in KERNEL_TOOLS
+    assert "send_web_message" not in KERNEL_TOOLS
+
+
+def test_resolve_session_conversation_id_always_uses_session_uuid():
+    session_id = uuid.uuid4()
+    session = SimpleNamespace(id=session_id, external_conv_id="feishu_p2p_ou_xxx")
+
+    assert _resolve_session_conversation_id(session) == str(session_id)
+
+
+def test_summarize_chat_messages_extracts_runtime_events_and_tool_usage():
+    messages = [
+        SimpleNamespace(
+            role="system",
+            content=json.dumps({
+                "event_type": "pack_activation",
+                "packs": [{"name": "web_pack"}],
+                "message": "Activated web pack",
+            }),
+        ),
+        SimpleNamespace(
+            role="tool_call",
+            content=json.dumps({
+                "name": "read_file",
+                "args": {"path": "skills/web-research/SKILL.md"},
+                "status": "done",
+                "result": "ok",
+            }),
+        ),
+        SimpleNamespace(
+            role="system",
+            content=json.dumps({
+                "event_type": "permission",
+                "tool_name": "send_feishu_message",
+                "status": "approval_required",
+                "capability": "channel.feishu.message",
+                "message": "This action requires approval.",
+            }),
+        ),
+        SimpleNamespace(
+            role="system",
+            content=json.dumps({
+                "event_type": "session_compact",
+                "summary": "Older context compacted.",
+            }),
+        ),
+    ]
+
+    summary = _summarize_chat_messages(messages)
+
+    assert summary == {
+        "activated_packs": ["web_pack"],
+        "used_tools": ["read_file"],
+        "blocked_capabilities": [{
+            "tool": "send_feishu_message",
+            "status": "approval_required",
+            "capability": "channel.feishu.message",
+        }],
+        "compaction_count": 1,
+    }

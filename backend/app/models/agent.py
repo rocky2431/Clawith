@@ -53,23 +53,6 @@ class Agent(Base):
     primary_model_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("llm_models.id"))
     fallback_model_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("llm_models.id"))
 
-    # Autonomy policy (L1/L2/L3)
-    autonomy_policy: Mapped[dict] = mapped_column(
-        JSON,
-        default={
-            "read_files": "L1",
-            "write_workspace_files": "L2",
-            "send_feishu_message": "L2",
-            "send_external_message": "L3",
-            "modify_soul": "L3",
-            "access_business_system_read": "L2",
-            "access_business_system_write": "L3",
-            "delete_files": "L3",
-            "create_calendar_event": "L2",
-            "financial_operations": "L3",
-        },
-    )
-
     # Token usage control
     max_tokens_per_day: Mapped[int | None] = mapped_column(Integer)
     max_tokens_per_month: Mapped[int | None] = mapped_column(Integer)
@@ -153,7 +136,6 @@ class AgentTemplate(Base):
     category: Mapped[str] = mapped_column(String(50), default="general")
     soul_template: Mapped[str] = mapped_column(Text, default="")
     default_skills: Mapped[list] = mapped_column(JSON, default=[])
-    default_autonomy_policy: Mapped[dict] = mapped_column(JSON, default={})
     is_builtin: Mapped[bool] = mapped_column(default=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

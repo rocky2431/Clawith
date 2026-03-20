@@ -25,7 +25,7 @@ class AuditLog(Base):
 
 
 class ApprovalRequest(Base):
-    """Approval request for L3 autonomy operations."""
+    """Approval request for capability-gated operations."""
 
     __tablename__ = "approval_requests"
 

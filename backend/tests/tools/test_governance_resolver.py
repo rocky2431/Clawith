@@ -48,7 +48,7 @@ async def test_tool_governance_resolver_dependencies_wrap_services(monkeypatch):
     agent_id = uuid4()
     audit_calls = []
     capability_calls = []
-    autonomy_calls = []
+    approval_calls = []
 
     class _FakeScalarResult:
         def __init__(self, value):
@@ -80,16 +80,16 @@ async def test_tool_governance_resolver_dependencies_wrap_services(monkeypatch):
     async def fake_write_audit_event(db, **kwargs):
         audit_calls.append((db, kwargs))
 
-    class _FakeAutonomyService:
-        async def check_and_enforce(self, db, agent, action_type, payload):
-            autonomy_calls.append((db, agent, action_type, payload))
-            return {"allowed": True}
+    class _FakeApprovalService:
+        async def request_approval(self, db, agent, *, action_type, details):
+            approval_calls.append((db, agent, action_type, details))
+            return {"allowed": False, "approval_id": "approval-1"}
 
     fake_session = _FakeSession()
     monkeypatch.setattr("app.tools.governance_resolver.async_session", lambda: fake_session)
     monkeypatch.setattr("app.tools.governance_resolver.check_capability", fake_check_capability)
     monkeypatch.setattr("app.tools.governance_resolver.write_audit_event", fake_write_audit_event)
-    monkeypatch.setattr("app.tools.governance_resolver.autonomy_service", _FakeAutonomyService())
+    monkeypatch.setattr("app.tools.governance_resolver.approval_service", _FakeApprovalService())
 
     resolver = ToolGovernanceResolver()
     deps = resolver.build_dependencies()
@@ -104,13 +104,13 @@ async def test_tool_governance_resolver_dependencies_wrap_services(monkeypatch):
     assert audit_calls[0][1]["event_type"] == "capability.denied"
     assert fake_session.committed is True
 
-    result = await deps.check_autonomy(
+    result = await deps.request_approval(
         agent_id=agent_id,
         user_id=uuid4(),
         tool_name="write_file",
         arguments={"path": "focus.md"},
-        action_type="write_workspace_files",
+        capability="workspace.write",
     )
-    assert result == {"allowed": True}
-    assert autonomy_calls[0][2] == "write_workspace_files"
-    assert autonomy_calls[0][3]["tool"] == "write_file"
+    assert result == {"allowed": False, "approval_id": "approval-1"}
+    assert approval_calls[0][2] == "workspace.write"
+    assert approval_calls[0][3]["tool"] == "write_file"

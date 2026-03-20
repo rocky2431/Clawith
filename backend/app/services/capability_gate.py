@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 # Tool name → capability category mapping (only high-risk tools)
 CAPABILITY_MAP: dict[str, str] = {
+    "write_file": "workspace.file.write",
+    "edit_file": "workspace.file.write",
     "send_feishu_message": "channel.feishu.message",
     "feishu_calendar_create": "channel.feishu.calendar",
     "feishu_calendar_update": "channel.feishu.calendar",
@@ -31,6 +33,11 @@ CAPABILITY_MAP: dict[str, str] = {
     "update_trigger": "agent.trigger.modify",
     "import_mcp_server": "agent.tool.install",
     "send_message_to_agent": "agent.message.send",
+    "web_search": "external.web.search",
+    "jina_search": "external.web.search",
+    "bing_search": "external.web.search",
+    "jina_read": "external.web.read",
+    "read_webpage": "external.web.read",
 }
 
 

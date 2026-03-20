@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.core.policy import write_audit_event
 from app.database import async_session
 from app.models.agent import Agent
-from app.services.autonomy_service import autonomy_service
+from app.services.approval_service import approval_service
 from app.services.capability_gate import check_capability
 from app.tools.governance import GovernanceDependencies, ToolGovernanceContext
 from app.tools.runtime import ToolExecutionContext
@@ -49,24 +49,24 @@ class ToolGovernanceResolver:
                 await write_audit_event(db, **kwargs)
                 await db.commit()
 
-        async def _check_autonomy(
+        async def _request_approval(
             *,
             agent_id: uuid.UUID,
             user_id: uuid.UUID,
             tool_name: str,
             arguments: dict,
-            action_type: str,
+            capability: str,
         ) -> dict:
             async with async_session() as db:
                 result = await db.execute(select(Agent).where(Agent.id == agent_id))
                 agent = result.scalar_one_or_none()
                 if not agent:
-                    return {"allowed": False, "level": "unknown", "message": "Agent not found"}
-                outcome = await autonomy_service.check_and_enforce(
+                    return {"allowed": False, "message": "Agent not found"}
+                outcome = await approval_service.request_approval(
                     db,
                     agent,
-                    action_type,
-                    {"tool": tool_name, "args": str(arguments)[:200], "requested_by": str(user_id)},
+                    action_type=capability,
+                    details={"tool": tool_name, "args": str(arguments)[:200], "requested_by": str(user_id)},
                 )
                 await db.commit()
                 return outcome
@@ -75,5 +75,5 @@ class ToolGovernanceResolver:
             resolve_security_zone=_resolve_security_zone,
             check_capability=_check_capability,
             write_audit_event=_write_audit_event,
-            check_autonomy=_check_autonomy,
+            request_approval=_request_approval,
         )
