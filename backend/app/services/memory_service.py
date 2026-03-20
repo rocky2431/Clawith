@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from typing import Awaitable, Callable
 
 from sqlalchemy import select
 
@@ -21,6 +22,8 @@ from app.models.tenant_setting import TenantSetting
 from app.services.conversation_summarizer import estimate_tokens, _extract_summary
 
 logger = logging.getLogger(__name__)
+
+CompactionCallback = Callable[[dict], Awaitable[None] | None]
 
 
 # ============================================================================
@@ -78,6 +81,7 @@ async def maybe_compress_messages(
     *,
     compress_threshold: float | None = None,
     keep_recent: int | None = None,
+    on_compaction: CompactionCallback | None = None,
 ) -> list[dict]:
     """Compress old messages when approaching model context window.
 
@@ -117,12 +121,28 @@ async def maybe_compress_messages(
             from app.services.conversation_summarizer import _llm_summarize
             summary = await _llm_summarize(old_messages, summary_model)
             if summary:
+                if on_compaction:
+                    maybe_result = on_compaction({
+                        "summary": summary,
+                        "original_message_count": len(messages),
+                        "kept_message_count": len(recent_messages) + 1,
+                    })
+                    if maybe_result is not None:
+                        await maybe_result
                 return [{"role": "system", "content": f"[Previous conversation summary]\n{summary}"}] + recent_messages
         except Exception as e:
             logger.warning("LLM summarization failed, falling back to extraction: %s", e)
 
     # Fallback: text extraction
     summary = _extract_summary(old_messages)
+    if on_compaction:
+        maybe_result = on_compaction({
+            "summary": summary,
+            "original_message_count": len(messages),
+            "kept_message_count": len(recent_messages) + 1,
+        })
+        if maybe_result is not None:
+            await maybe_result
     return [{"role": "system", "content": f"[Previous conversation summary]\n{summary}"}] + recent_messages
 
 

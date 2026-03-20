@@ -1,19 +1,20 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores';
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { authApi } from './services/api';
-import Login from './pages/Login';
-import CompanySetup from './pages/CompanySetup';
-import Layout from './pages/Layout';
-import Dashboard from './pages/Dashboard';
-import Plaza from './pages/Plaza';
-import AgentDetail from './pages/AgentDetail';
-import AgentCreate from './pages/AgentCreate';
-import Chat from './pages/Chat';
-import Messages from './pages/Messages';
-import EnterpriseSettings from './pages/EnterpriseSettings';
-import InvitationCodes from './pages/InvitationCodes';
-import AdminCompanies from './pages/AdminCompanies';
+
+const Login = lazy(() => import('./pages/Login'));
+const CompanySetup = lazy(() => import('./pages/CompanySetup'));
+const Layout = lazy(() => import('./pages/Layout'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Plaza = lazy(() => import('./pages/Plaza'));
+const AgentDetail = lazy(() => import('./pages/AgentDetail'));
+const AgentCreate = lazy(() => import('./pages/AgentCreate'));
+const Chat = lazy(() => import('./pages/Chat'));
+const Messages = lazy(() => import('./pages/Messages'));
+const EnterpriseSettings = lazy(() => import('./pages/EnterpriseSettings'));
+const InvitationCodes = lazy(() => import('./pages/InvitationCodes'));
+const AdminCompanies = lazy(() => import('./pages/AdminCompanies'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const token = useAuthStore((s) => s.token);
@@ -99,8 +100,14 @@ export default function App() {
         );
     }
 
+    const routeFallback = (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>
+            加载中...
+        </div>
+    );
+
     return (
-        <>
+        <Suspense fallback={routeFallback}>
             <NotificationBar />
             <Routes>
                 <Route path="/login" element={<Login />} />
@@ -118,6 +125,6 @@ export default function App() {
                     <Route path="admin/companies" element={<AdminCompanies />} />
                 </Route>
             </Routes>
-        </>
+        </Suspense>
     );
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import { applyStreamEvent, hydrateTimelineMessage, type TimelineMessage } from '../lib/chatParts.ts';
 import { agentApi, enterpriseApi } from '../services/api';
 import { useAuthStore } from '../stores';
 
@@ -45,27 +46,11 @@ const Icons = {
     ),
 };
 
-interface ToolCall {
-    name: string;
-    args: any;
-    result?: string;
-}
-
-interface Message {
-    role: 'user' | 'assistant';
-    content: string;
-    fileName?: string;
-    toolCalls?: ToolCall[];
-    thinking?: string;
-    imageUrl?: string;
-    timestamp?: string;
-}
-
 export default function Chat() {
     const { t } = useTranslation();
     const { id } = useParams<{ id: string }>();
     const token = useAuthStore((s) => s.token);
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messages, setMessages] = useState<TimelineMessage[]>([]);
     const [input, setInput] = useState('');
     const [connected, setConnected] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -75,9 +60,6 @@ export default function Chat() {
     const wsRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const pendingToolCalls = useRef<ToolCall[]>([]);
-    const streamContent = useRef('');
-    const thinkingContent = useRef('');
 
     const { data: agent } = useQuery({
         queryKey: ['agent', id],
@@ -95,25 +77,9 @@ export default function Chat() {
         (m: any) => m.id === agent.primary_model_id && m.supports_vision
     );
 
-    const parseMessage = (msg: Message): Message => {
-        if (msg.role !== 'user') return msg;
-        // Standard web chat format: [file:name.pdf]\ncontent
-        const newFmt = msg.content.match(/^\[file:([^\]]+)\]\n?/);
-        if (newFmt) return { ...msg, fileName: newFmt[1], content: msg.content.slice(newFmt[0].length).trim() };
-        // Feishu/Slack channel format: [\u6587\u4ef6\u5df2\u4e0a\u4f20: workspace/uploads/name]
-        const chanFmt = msg.content.match(/^\[\u6587\u4ef6\u5df2\u4e0a\u4f20: (?:workspace\/uploads\/)?([^\]\n]+)\]/);
-        if (chanFmt) {
-            const raw = chanFmt[1]; const fileName = raw.split('/').pop() || raw;
-            return { ...msg, fileName, content: msg.content.slice(chanFmt[0].length).trim() };
-        }
-        // Old format: [File: name.pdf]\nFile location:...\nQuestion: user_msg
-        const oldFmt = msg.content.match(/^\[File: ([^\]]+)\]/);
-        if (oldFmt) {
-            const fileName = oldFmt[1];
-            const qMatch = msg.content.match(/\nQuestion: ([\s\S]+)$/);
-            return { ...msg, fileName, content: qMatch ? qMatch[1].trim() : '' };
-        }
-        return msg;
+    const resolveHistoryImageUrl = (fileName: string) => {
+        if (!id || !token) return undefined;
+        return `/api/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(fileName)}&token=${token}`;
     };
 
     // Load chat history on mount
@@ -124,11 +90,11 @@ export default function Chat() {
         })
             .then(r => r.json())
             .then((history: any[]) => {
-                if (history.length > 0) setMessages(history.map(h => {
-                    const msg = parseMessage({ role: h.role, content: h.content, fileName: h.fileName, toolCalls: h.toolCalls, thinking: h.thinking, imageUrl: h.imageUrl });
-                    msg.timestamp = h.created_at || undefined;
-                    return msg;
-                }));
+                if (history.length > 0) {
+                    setMessages(history.map((entry) => hydrateTimelineMessage(entry, {
+                        resolveImageUrl: resolveHistoryImageUrl,
+                    })));
+                }
             })
             .catch(() => { /* ignore */ });
     }, [id, token]);
@@ -166,60 +132,30 @@ export default function Chat() {
                 if (['thinking', 'chunk', 'tool_call', 'done', 'error', 'quota_exceeded'].includes(data.type)) {
                     setIsWaiting(false);
                 }
-                if (['error', 'quota_exceeded'].includes(data.type)) {
+                if (['thinking', 'chunk', 'tool_call'].includes(data.type)) {
+                    setStreaming(true);
+                }
+                if (['done', 'error', 'quota_exceeded'].includes(data.type)) {
                     setStreaming(false);
                 }
 
-                if (data.type === 'thinking') {
-                    // Accumulate thinking content
-                    thinkingContent.current += data.content;
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last && last.role === 'assistant') {
-                            const updated = [...prev];
-                            updated[updated.length - 1] = { ...last, thinking: thinkingContent.current };
-                            return updated;
-                        }
-                        return [...prev, { role: 'assistant', content: '', thinking: thinkingContent.current, timestamp: new Date().toISOString() }];
-                    });
-                } else if (data.type === 'chunk') {
-                    // Streaming text chunk — accumulate and update live preview
-                    streamContent.current += data.content;
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last && last.role === 'assistant') {
-                            // Update the streaming message in-place
-                            const updated = [...prev];
-                            updated[updated.length - 1] = { ...last, content: streamContent.current };
-                            return updated;
-                        }
-                        return [...prev, { role: 'assistant', content: streamContent.current, timestamp: new Date().toISOString() }];
-                    });
-                } else if (data.type === 'tool_call') {
-                    if (data.status === 'done') {
-                        pendingToolCalls.current.push({ name: data.name, args: data.args, result: data.result });
-                    }
-                } else if (data.type === 'done') {
-                    // Final response — replace streaming message with final + tool calls
-                    const toolCalls = pendingToolCalls.current.length > 0 ? [...pendingToolCalls.current] : undefined;
-                    const thinking = thinkingContent.current || undefined;
-                    pendingToolCalls.current = [];
-                    streamContent.current = '';
-                    thinkingContent.current = '';
-                    setStreaming(false);
-                    setMessages(prev => {
-                        const updated = [...prev];
-                        // Replace the last streaming assistant message
-                        if (updated.length > 0 && updated[updated.length - 1].role === 'assistant') {
-                            updated[updated.length - 1] = { role: 'assistant', content: data.content, toolCalls, thinking };
-                        } else {
-                            updated.push({ role: 'assistant', content: data.content, toolCalls, thinking });
-                        }
-                        return updated;
-                    });
+                if (['thinking', 'chunk', 'tool_call', 'done'].includes(data.type)) {
+                    setMessages((prev) => applyStreamEvent(prev, data, new Date().toISOString()));
+                } else if (data.type === 'error' || data.type === 'quota_exceeded') {
+                    const content = data.content || data.detail || data.message || 'Request denied';
+                    setMessages((prev) => [...prev, {
+                        role: 'assistant',
+                        content: `⚠️ ${content}`,
+                        timestamp: new Date().toISOString(),
+                    }]);
                 } else {
                     // Legacy format: {role, content}
-                    setMessages(prev => [...prev, { role: data.role, content: data.content }]);
+                    setMessages((prev) => [...prev, hydrateTimelineMessage({
+                        ...data,
+                        created_at: new Date().toISOString(),
+                    }, {
+                        resolveImageUrl: resolveHistoryImageUrl,
+                    })]);
                 }
             };
         };
@@ -276,9 +212,6 @@ export default function Chat() {
         if (!input.trim() && !attachedFile) return;
 
         // Reset streaming state for new response
-        pendingToolCalls.current = [];
-        streamContent.current = '';
-        thinkingContent.current = '';
         setIsWaiting(true);
         setStreaming(true);
 
@@ -358,11 +291,43 @@ export default function Chat() {
                         </div>
                     )}
                     {messages.map((msg, i) => (
-                        <div key={i} className={`chat-message ${msg.role}`}>
+                        <div key={i} className={`chat-message ${msg.role === 'user' ? 'user' : 'assistant'}`}>
                             <div className="chat-avatar" style={{ color: 'var(--text-tertiary)' }}>
-                                {msg.role === 'user' ? Icons.user : Icons.bot}
+                                {msg.role === 'user' ? Icons.user : msg.role === 'tool_call' ? Icons.tool : Icons.bot}
                             </div>
                             <div className="chat-bubble">
+                                {msg.role === 'event' && (
+                                    <div style={{
+                                        marginBottom: '8px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--border-subtle)',
+                                        background: msg.eventType === 'permission' ? 'rgba(245, 158, 11, 0.10)' : 'var(--bg-secondary)',
+                                        padding: '10px 12px',
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                            <span style={{ fontSize: '13px' }}>{msg.eventType === 'permission' ? '🔒' : '🗜️'}</span>
+                                            <span style={{ fontSize: '12px', fontWeight: 600 }}>{msg.eventTitle || (msg.eventType === 'permission' ? 'Permission Gate' : 'Context Compacted')}</span>
+                                            {msg.eventStatus && (
+                                                <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
+                                                    {msg.eventStatus.replace(/_/g, ' ')}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {msg.eventToolName && (
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
+                                                {msg.eventToolName}
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                            {msg.content}
+                                        </div>
+                                        {msg.eventApprovalId && (
+                                            <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                                                Approval ID: {msg.eventApprovalId}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 {msg.fileName && (() => {
                                     const fe = msg.fileName!.split('.').pop()?.toLowerCase() ?? '';
                                     const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(fe);
@@ -398,47 +363,47 @@ export default function Chat() {
                                         </div>
                                     </details>
                                 )}
-                                {msg.toolCalls && msg.toolCalls.length > 0 && (
+                                {msg.role === 'tool_call' ? (
                                     <details style={{
-                                        marginBottom: '8px', fontSize: '12px',
+                                        fontSize: '12px',
                                         background: 'var(--accent-subtle)', borderRadius: '6px',
-                                        padding: '0',
+                                        border: '1px solid var(--accent-subtle)',
+                                        overflow: 'hidden',
                                     }}>
                                         <summary style={{
                                             padding: '6px 10px', cursor: 'pointer',
-                                            color: 'var(--accent-text)', fontWeight: 500,
-                                            userSelect: 'none',
+                                            color: 'var(--accent-text)', fontWeight: 500, userSelect: 'none',
+                                            display: 'flex', alignItems: 'center', gap: '6px',
                                         }}>
-                                            {Icons.tool} {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
+                                            <span style={{ display: 'flex' }}>{msg.toolStatus === 'running' ? Icons.loader : Icons.tool}</span>
+                                            <span>{msg.toolName || 'tool'}</span>
+                                            {msg.toolStatus === 'running' && (
+                                                <span style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                                                    {t('common.loading')}
+                                                </span>
+                                            )}
                                         </summary>
                                         <div style={{ padding: '4px 10px 8px' }}>
-                                            {msg.toolCalls.map((tc, j) => (
-                                                <div key={j} style={{
-                                                    marginBottom: j < msg.toolCalls!.length - 1 ? '6px' : 0,
-                                                    borderBottom: j < msg.toolCalls!.length - 1 ? '1px solid var(--border-subtle)' : 'none',
-                                                    paddingBottom: j < msg.toolCalls!.length - 1 ? '6px' : 0,
+                                            {msg.toolArgs !== undefined && (
+                                                <div style={{
+                                                    fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)',
+                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                                                 }}>
-                                                    <div style={{ fontWeight: 600, color: 'var(--accent-text)', marginBottom: '2px' }}>
-                                                        {tc.name}
-                                                    </div>
-                                                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                                        {JSON.stringify(tc.args)}
-                                                    </div>
-                                                    {tc.result && (
-                                                        <div style={{
-                                                            marginTop: '4px', fontSize: '11px', color: 'var(--text-secondary)',
-                                                            fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                                                            maxHeight: '120px', overflow: 'auto',
-                                                        }}>
-                                                            {tc.result}
-                                                        </div>
-                                                    )}
+                                                    {typeof msg.toolArgs === 'string' ? msg.toolArgs : JSON.stringify(msg.toolArgs, null, 2)}
                                                 </div>
-                                            ))}
+                                            )}
+                                            {msg.toolResult && (
+                                                <div style={{
+                                                    marginTop: '6px', fontSize: '11px', color: 'var(--text-secondary)',
+                                                    fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                                                    maxHeight: '120px', overflow: 'auto',
+                                                }}>
+                                                    {msg.toolResult}
+                                                </div>
+                                            )}
                                         </div>
                                     </details>
-                                )}
-                                {msg.role === 'assistant' ? (
+                                ) : msg.role === 'assistant' ? (
                                     streaming && !msg.content && i === messages.length - 1 ? (
                                         <div className="thinking-indicator">
                                             <div className="thinking-dots">
@@ -449,7 +414,7 @@ export default function Chat() {
                                     ) : (
                                         <MarkdownRenderer content={msg.content} />
                                     )
-                                ) : (
+                                ) : msg.role === 'event' ? null : (
                                     <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
                                 )}
                                 {msg.timestamp && (

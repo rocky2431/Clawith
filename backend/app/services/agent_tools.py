@@ -20,6 +20,7 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Awaitable, Callable
 
 from loguru import logger
 
@@ -42,6 +43,7 @@ channel_web_agent_id: ContextVar = ContextVar('channel_web_agent_id', default=No
 # Set by Feishu channel handler — open_id of the message sender so calendar tool
 # can auto-invite them as attendee when no explicit attendee list is given
 channel_feishu_sender_open_id: ContextVar = ContextVar('channel_feishu_sender_open_id', default=None)
+ToolEventCallback = Callable[[dict], Awaitable[None] | None]
 
 # ─── Tool Definitions (OpenAI function-calling format) ──────────
 
@@ -76,6 +78,23 @@ AGENT_TOOLS = [
                     }
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_skill",
+            "description": "Load the full instructions for a named skill from the skills/ directory. Use this when a task matches a known skill.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Skill name or skill path, e.g. 'web research', 'data-analysis', or 'skills/web-research/SKILL.md'",
+                    }
+                },
+                "required": ["name"],
             },
         },
     },
@@ -915,7 +934,7 @@ async def _agent_has_feishu(agent_id: uuid.UUID) -> bool:
 # ─── Dynamic Tool Loading from DB ──────────────────────────────
 
 CORE_TOOL_NAMES = {
-    "list_files", "read_file", "write_file", "delete_file",
+    "list_files", "read_file", "load_skill", "write_file", "delete_file",
     "jina_search", "jina_read", "web_search",
     "send_message_to_agent", "send_web_message", "send_channel_file",
     "set_trigger", "list_triggers",
@@ -1112,7 +1131,7 @@ async def _execute_tool_direct(
                 return "Missing path"
             return _write_file(ws, path, content)
         elif tool_name == "execute_code":
-            return await _execute_code(agent_id, ws, arguments)
+            return await _execute_code(ws, arguments)
         elif tool_name == "web_search":
             return await _web_search(arguments)
         elif tool_name == "jina_search":
@@ -1132,6 +1151,7 @@ async def execute_tool(
     arguments: dict,
     agent_id: uuid.UUID,
     user_id: uuid.UUID,
+    event_callback: ToolEventCallback | None = None,
 ) -> str:
     """Execute a tool call and return the result as a string."""
     # Look up agent's tenant_id for tenant-scoped operations
@@ -1152,7 +1172,7 @@ async def execute_tool(
 
     # ── Security zone enforcement (fail closed: default to most restrictive on error) ──
     _SENSITIVE_TOOLS = {"send_feishu_message", "send_email", "delete_file", "write_file", "reply_email"}
-    _SAFE_TOOLS = {"list_files", "read_file", "jina_search", "jina_read", "web_search", "read_document", "list_tasks", "get_task"}
+    _SAFE_TOOLS = {"list_files", "read_file", "load_skill", "jina_search", "jina_read", "web_search", "read_document", "list_tasks", "get_task"}
     try:
         from app.models.agent import Agent as _AgentModel
         async with async_session() as _szdb:
@@ -1160,13 +1180,45 @@ async def execute_tool(
             _zone = _sz_r.scalar_one_or_none() or "standard"
 
         if _zone == "public" and tool_name not in _SAFE_TOOLS:
-            return f"🔒 Tool '{tool_name}' is blocked — this agent is in the 'public' security zone and can only use safe read-only tools."
+            message = f"🔒 Tool '{tool_name}' is blocked — this agent is in the 'public' security zone and can only use safe read-only tools."
+            if event_callback:
+                maybe_result = event_callback({
+                    "type": "permission",
+                    "tool_name": tool_name,
+                    "status": "blocked",
+                    "message": message,
+                    "security_zone": _zone,
+                })
+                if maybe_result is not None:
+                    await maybe_result
+            return message
         if _zone == "restricted" and tool_name in _SENSITIVE_TOOLS:
-            return f"🔒 Tool '{tool_name}' requires approval — this agent is in the 'restricted' security zone. Please ask an admin to approve this action."
+            message = f"🔒 Tool '{tool_name}' requires approval — this agent is in the 'restricted' security zone. Please ask an admin to approve this action."
+            if event_callback:
+                maybe_result = event_callback({
+                    "type": "permission",
+                    "tool_name": tool_name,
+                    "status": "approval_required",
+                    "message": message,
+                    "security_zone": _zone,
+                })
+                if maybe_result is not None:
+                    await maybe_result
+            return message
     except Exception as e:
         logger.warning("Security zone check failed for agent %s — blocking sensitive tool %s: %s", agent_id, tool_name, e)
         if tool_name in _SENSITIVE_TOOLS:
-            return f"🔒 Tool '{tool_name}' blocked — security zone check failed. Please retry or contact admin."
+            message = f"🔒 Tool '{tool_name}' blocked — security zone check failed. Please retry or contact admin."
+            if event_callback:
+                maybe_result = event_callback({
+                    "type": "permission",
+                    "tool_name": tool_name,
+                    "status": "blocked",
+                    "message": message,
+                })
+                if maybe_result is not None:
+                    await maybe_result
+            return message
 
     # ── Autonomy boundary check ──
     action_type = _TOOL_AUTONOMY_MAP.get(tool_name)
@@ -1185,11 +1237,44 @@ async def execute_tool(
                     if not result_check.get("allowed"):
                         level = result_check.get("level", "L3")
                         if level == "L3":
-                            return f"⏳ This action requires approval. An approval request has been sent. Please wait for approval before retrying. (Approval ID: {result_check.get('approval_id', 'N/A')})"
-                        return f"❌ Action denied: {result_check.get('message', 'unknown reason')}"
+                            message = f"⏳ This action requires approval. An approval request has been sent. Please wait for approval before retrying. (Approval ID: {result_check.get('approval_id', 'N/A')})"
+                            if event_callback:
+                                maybe_result = event_callback({
+                                    "type": "permission",
+                                    "tool_name": tool_name,
+                                    "status": "approval_required",
+                                    "message": message,
+                                    "approval_id": result_check.get("approval_id"),
+                                    "autonomy_level": level,
+                                })
+                                if maybe_result is not None:
+                                    await maybe_result
+                            return message
+                        message = f"❌ Action denied: {result_check.get('message', 'unknown reason')}"
+                        if event_callback:
+                            maybe_result = event_callback({
+                                "type": "permission",
+                                "tool_name": tool_name,
+                                "status": "blocked",
+                                "message": message,
+                                "autonomy_level": level,
+                            })
+                            if maybe_result is not None:
+                                await maybe_result
+                        return message
         except Exception as e:
             logger.error(f"[Autonomy] Check failed — blocking as safety measure: {e}")
-            return f"⚠️ Autonomy check failed ({e}). Operation blocked for safety. Please retry or contact admin."
+            message = f"⚠️ Autonomy check failed ({e}). Operation blocked for safety. Please retry or contact admin."
+            if event_callback:
+                maybe_result = event_callback({
+                    "type": "permission",
+                    "tool_name": tool_name,
+                    "status": "blocked",
+                    "message": message,
+                })
+                if maybe_result is not None:
+                    await maybe_result
+            return message
 
     # Timeout: 60s for code execution, 30s for everything else
     _tool_timeout = 60.0 if tool_name == "execute_code" else 30.0
@@ -1229,6 +1314,11 @@ async def _execute_tool_inner(
         if not path:
             return "❌ Missing required argument 'path' for read_file"
         result = _read_file(ws, path, tenant_id=_agent_tenant_id)
+    elif tool_name == "load_skill":
+        skill_name = arguments.get("name")
+        if not skill_name:
+            return "❌ Missing required argument 'name' for load_skill"
+        result = _load_skill(ws, skill_name)
     elif tool_name == "read_document":
         path = arguments.get("path")
         if not path:
@@ -1951,6 +2041,54 @@ def _read_file(ws: Path, rel_path: str, tenant_id: str | None = None) -> str:
         return f"Read failed: {e}"
 
 
+def _load_skill(ws: Path, skill_name: str) -> str:
+    """Load a skill by friendly name or explicit skills/ path."""
+    requested = (skill_name or "").strip()
+    if not requested:
+        return "❌ Skill name cannot be empty"
+
+    skills_dir = (ws / "skills").resolve()
+    if not skills_dir.exists():
+        return "Skill not found: skills directory does not exist"
+
+    def _normalize(name: str) -> str:
+        return name.strip().lower().replace("_", "-").replace(" ", "-")
+
+    def _read_skill_file(path: Path) -> str:
+        if not str(path).startswith(str(skills_dir)):
+            return "Access denied for this skill path"
+        rel_path = path.relative_to(ws).as_posix()
+        return _read_file(ws, rel_path)
+
+    # Explicit path support: skills/foo/SKILL.md or foo/SKILL.md
+    requested_path = requested
+    if requested_path.startswith("skills/"):
+        requested_path = requested_path[len("skills/"):]
+    explicit_path = (skills_dir / requested_path).resolve()
+    if explicit_path.is_file():
+        return _read_skill_file(explicit_path)
+
+    normalized = _normalize(requested)
+
+    for entry in sorted(skills_dir.iterdir()):
+        if entry.name.startswith("."):
+            continue
+
+        if entry.is_dir():
+            if _normalize(entry.name) != normalized:
+                continue
+            for filename in ("SKILL.md", "skill.md"):
+                skill_file = entry / filename
+                if skill_file.exists():
+                    return _read_skill_file(skill_file.resolve())
+
+        elif entry.is_file() and entry.suffix == ".md":
+            if _normalize(entry.stem) == normalized:
+                return _read_skill_file(entry.resolve())
+
+    return f"Skill not found: {skill_name}"
+
+
 async def _read_document(ws: Path, rel_path: str, max_chars: int = 8000, tenant_id: str | None = None) -> str:
     """Read content from office documents (PDF, DOCX, XLSX, PPTX)."""
     # Handle enterprise_info/ as shared directory (tenant-scoped)
@@ -2530,6 +2668,106 @@ async def _send_web_message(agent_id: uuid.UUID, args: dict) -> str:
         return f"❌ Web message send error: {str(e)[:200]}"
 
 
+A2A_SYSTEM_PROMPT_SUFFIX = (
+    "--- Agent-to-Agent Message ---\n"
+    "You are receiving a message from another digital employee. "
+    "Reply concisely and helpfully. Focus on the request and provide a clear answer."
+)
+
+
+async def _persist_agent_tool_call(
+    session_agent_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    session_id: str,
+    participant_id: uuid.UUID | None,
+    tool_name: str,
+    tool_args: dict,
+    tool_result: str,
+) -> None:
+    """Persist A2A tool execution so it remains visible in the shared chat session."""
+    from app.models.audit import ChatMessage
+
+    try:
+        async with async_session() as db:
+            db.add(ChatMessage(
+                agent_id=session_agent_id,
+                user_id=owner_id,
+                role="tool_call",
+                content=json.dumps({
+                    "name": tool_name,
+                    "args": tool_args,
+                    "status": "done",
+                    "result": str(tool_result)[:500],
+                }, ensure_ascii=False),
+                conversation_id=session_id,
+                participant_id=participant_id,
+            ))
+            await db.commit()
+    except Exception as exc:
+        logger.error(f"[A2A] Failed to save tool_call: {exc}")
+
+
+def _build_agent_message_tool_executor(
+    target_agent_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    session_agent_id: uuid.UUID,
+    session_id: str,
+    participant_id: uuid.UUID | None,
+):
+    """Wrap A2A tool execution with chat-history persistence."""
+
+    async def _executor(tool_name: str, tool_args: dict) -> str:
+        tool_result = await execute_tool(tool_name, tool_args, target_agent_id, owner_id)
+        await _persist_agent_tool_call(
+            session_agent_id=session_agent_id,
+            owner_id=owner_id,
+            session_id=session_id,
+            participant_id=participant_id,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_result=tool_result,
+        )
+        return tool_result
+
+    return _executor
+
+
+async def _invoke_agent_message_runtime(
+    *,
+    target,
+    target_model,
+    conversation_messages: list[dict],
+    owner_id: uuid.UUID,
+    session_id: str,
+    session_agent_id: uuid.UUID,
+    participant_id: uuid.UUID | None,
+) -> str:
+    """Run the target agent reply through the shared runtime kernel."""
+    from app.runtime.invoker import AgentInvocationRequest, invoke_agent
+
+    result = await invoke_agent(
+        AgentInvocationRequest(
+            model=target_model,
+            messages=conversation_messages,
+            agent_name=target.name,
+            role_description=target.role_description or "",
+            agent_id=target.id,
+            user_id=owner_id,
+            system_prompt_suffix=A2A_SYSTEM_PROMPT_SUFFIX,
+            tool_executor=_build_agent_message_tool_executor(
+                target_agent_id=target.id,
+                owner_id=owner_id,
+                session_agent_id=session_agent_id,
+                session_id=session_id,
+                participant_id=participant_id,
+            ),
+            core_tools_only=False,
+            max_tool_rounds=getattr(target, "max_tool_rounds", None) or 50,
+        )
+    )
+    return result.content or ""
+
+
 async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
     """Send a message to another digital employee. Uses a single request-response pattern:
     the source agent sends a message, the target agent replies once, and the result is returned.
@@ -2616,7 +2854,6 @@ async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
             session_id = str(chat_session.id)
 
             # Prepare target LLM
-            from app.services.agent_context import build_agent_context
             from app.models.llm import LLMModel
 
             # Load primary model (with fallback support)
@@ -2634,14 +2871,6 @@ async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
 
             if not target_model:
                 return f"⚠️ {target.name} has no LLM model configured"
-
-            # Build target system prompt
-            target_system = await build_agent_context(target.id, target.name, target.role_description or "")
-            target_system += (
-                "\n\n--- Agent-to-Agent Message ---\n"
-                "You are receiving a message from another digital employee. "
-                "Reply concisely and helpfully. Focus on the request and provide a clear answer.\n"
-            )
 
             # Load recent history for context
             conversation_messages: list[dict] = []
@@ -2677,120 +2906,15 @@ async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
             chat_session.last_message_at = datetime.now(timezone.utc)
             await db.commit()
 
-            # Call target LLM with tool support (multi-round)
-            from app.services.llm_utils import (
-                get_provider_base_url,
-                create_llm_client,
-                LLMMessage,
+            target_reply = await _invoke_agent_message_runtime(
+                target=target,
+                target_model=target_model,
+                conversation_messages=conversation_messages,
+                owner_id=owner_id,
+                session_id=session_id,
+                session_agent_id=session_agent_id,
+                participant_id=tgt_participant.id if tgt_participant else None,
             )
-            from app.services.agent_tools import get_agent_tools_for_llm, execute_tool
-            base_url = get_provider_base_url(target_model.provider, target_model.base_url)
-            if not base_url:
-                return f"⚠️ {target.name}'s model has no API base URL configured"
-
-            full_msgs: list[LLMMessage] = [LLMMessage(role="system", content=target_system)] + [
-                LLMMessage(role=m["role"], content=m["content"]) for m in conversation_messages
-            ]
-
-            # Load tools for target agent
-            tools_for_llm = await get_agent_tools_for_llm(target.id)
-
-            max_tool_rounds = target.max_tool_rounds or 50
-            target_reply = ""
-            _a2a_accumulated_tokens = 0
-
-            from app.services.token_tracker import record_token_usage, extract_usage_tokens, estimate_tokens_from_chars
-
-            llm_client = create_llm_client(
-                provider=target_model.provider,
-                api_key=target_model.api_key,
-                model=target_model.model,
-                base_url=base_url,
-                timeout=120.0,
-            )
-            try:
-                for _round in range(max_tool_rounds):
-                    response = await llm_client.complete(
-                        messages=full_msgs,
-                        tools=tools_for_llm if tools_for_llm else None,
-                        temperature=0.7,
-                        max_tokens=4096,
-                    )
-
-                    # Track tokens from API response
-                    real_tokens = extract_usage_tokens(response.usage)
-                    if real_tokens:
-                        _a2a_accumulated_tokens += real_tokens
-                    else:
-                        round_chars = sum(len(m.content or '') for m in full_msgs if isinstance(m.content, str))
-                        _a2a_accumulated_tokens += estimate_tokens_from_chars(round_chars)
-
-                    # Check for tool calls
-                    if response.tool_calls:
-                        # Add assistant message with tool calls to conversation
-                        full_msgs.append(LLMMessage(
-                            role="assistant",
-                            content=response.content or None,
-                            tool_calls=[{
-                                "id": tc.get("id", ""),
-                                "type": "function",
-                                "function": tc.get("function", {}),
-                            } for tc in response.tool_calls],
-                            reasoning_content=response.reasoning_content,
-                        ))
-
-                        # Execute each tool call
-                        for tc in response.tool_calls:
-                            fn = tc.get("function", {})
-                            tool_name = fn.get("name", "")
-                            raw_args = fn.get("arguments", "{}")
-                            if isinstance(raw_args, dict):
-                                tool_args = raw_args
-                            else:
-                                try:
-                                    tool_args = json.loads(raw_args) if raw_args else {}
-                                except Exception:
-                                    tool_args = {}
-
-                            tool_result = await execute_tool(tool_name, tool_args, target.id, owner_id)
-
-                            # Save tool_call to DB so it appears in chat history
-                            try:
-                                async with async_session() as _tc_db:
-                                    _tc_db.add(ChatMessage(
-                                        agent_id=session_agent_id,
-                                        user_id=owner_id,
-                                        role="tool_call",
-                                        content=json.dumps({
-                                            "name": tool_name,
-                                            "args": tool_args,
-                                            "status": "done",
-                                            "result": str(tool_result)[:500],
-                                        }, ensure_ascii=False),
-                                        conversation_id=session_id,
-                                        participant_id=tgt_participant.id if tgt_participant else None,
-                                    ))
-                                    await _tc_db.commit()
-                            except Exception as _tc_err:
-                                logger.error(f"[A2A] Failed to save tool_call: {_tc_err}")
-
-                            # Add tool result to conversation
-                            full_msgs.append(LLMMessage(
-                                role="tool",
-                                tool_call_id=tc.get("id", ""),
-                                content=str(tool_result)[:4000],
-                            ))
-                        continue  # Next LLM round
-
-                    # No tool calls — this is the final text response
-                    target_reply = response.content or ""
-                    break
-            finally:
-                await llm_client.close()
-
-            # Record accumulated A2A tokens for the target agent
-            if _a2a_accumulated_tokens > 0:
-                await record_token_usage(target.id, _a2a_accumulated_tokens)
 
             if not target_reply:
                 return f"⚠️ {target.name} did not respond (LLM returned empty)"

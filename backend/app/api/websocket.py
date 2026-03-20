@@ -15,6 +15,7 @@ from app.database import async_session
 from app.models.agent import Agent
 from app.models.audit import ChatMessage
 from app.models.llm import LLMModel
+from app.runtime.invoker import AgentInvocationRequest, invoke_agent
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,8 @@ async def get_chat_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Return web chat message history for this user + agent."""
+    from app.services.chat_message_parts import serialize_chat_message
+
     conv_id = f"web_{current_user.id}"
     result = await db.execute(
         select(ChatMessage)
@@ -79,150 +82,8 @@ async def get_chat_history(
     messages = result.scalars().all()
     out = []
     for m in messages:
-        entry: dict = {"role": m.role, "content": m.content, "created_at": m.created_at.isoformat() if m.created_at else None}
-        if getattr(m, 'thinking', None):
-            entry["thinking"] = m.thinking
-        if m.role == "tool_call":
-            # Parse JSON-encoded tool call data
-            try:
-                import json
-                data = json.loads(m.content)
-                entry["content"] = ""
-                entry["toolName"] = data.get("name", "")
-                entry["toolArgs"] = data.get("args")
-                entry["toolStatus"] = data.get("status", "done")
-                entry["toolResult"] = data.get("result", "")
-            except Exception as e:
-                logger.debug("Suppressed: %s", e)
-        out.append(entry)
+        out.append(serialize_chat_message(m))
     return out
-
-
-async def call_llm_via_engine(
-    model: LLMModel,
-    messages: list[dict],
-    agent_name: str,
-    role_description: str,
-    agent_id=None,
-    user_id=None,
-    on_chunk=None,
-    on_tool_call=None,
-    on_thinking=None,
-    supports_vision=False,
-    memory_context: str = "",
-) -> str:
-    """Call LLM via the middleware-based execution engine."""
-    from app.services.agent_tools import get_agent_tools_for_llm, AGENT_TOOLS
-    from app.services.agent_context import build_agent_context
-    from app.services.execution.engine import AgentExecutionEngine, ExecutionCallbacks, ExecutionState
-    from app.services.execution.context_middleware import ContextMiddleware
-    from app.services.execution.memory_middleware import MemoryMiddleware
-    from app.services.execution.tool_reliability import ToolReliabilityMiddleware, FallbackMiddleware
-
-    # Build system prompt
-    _current_user_name = None
-    if user_id:
-        try:
-            from app.models.user import User as _UserModel
-            async with async_session() as _udb:
-                _ur = await _udb.execute(select(_UserModel).where(_UserModel.id == user_id))
-                _u = _ur.scalar_one_or_none()
-                if _u:
-                    _current_user_name = _u.display_name or _u.username
-        except Exception:
-            logger.debug("Failed to resolve user name for engine")
-
-    system_prompt = await build_agent_context(agent_id, agent_name, role_description, current_user_name=_current_user_name)
-    tools_for_llm = await get_agent_tools_for_llm(agent_id, core_only=True) if agent_id else AGENT_TOOLS
-
-    # Resolve agent config
-    _max_tool_rounds = 50
-    _tenant_id = None
-    if agent_id:
-        try:
-            from app.models.agent import Agent as _AM
-            async with async_session() as _db:
-                _ar = await _db.execute(select(_AM).where(_AM.id == agent_id))
-                _agent = _ar.scalar_one_or_none()
-                if _agent:
-                    _max_tool_rounds = _agent.max_tool_rounds or 50
-                    _tenant_id = _agent.tenant_id
-        except Exception:
-            logger.debug("Failed to load agent config for engine")
-
-    # Inject relevant enterprise knowledge based on user's last message
-    if agent_id and messages:
-        last_user_msg = next(
-            (m["content"] for m in reversed(messages) if m.get("role") == "user" and isinstance(m.get("content"), str)),
-            None,
-        )
-        if last_user_msg:
-            from app.services.knowledge_inject import fetch_relevant_knowledge
-
-            knowledge = await fetch_relevant_knowledge(last_user_msg, tenant_id=_tenant_id)
-            if knowledge:
-                system_prompt += "\n\n" + knowledge
-
-    # Inject memory context (previous summary + agent memory)
-    if memory_context:
-        system_prompt += "\n\n" + memory_context
-
-    # Build callbacks adapter (engine uses positional args, websocket uses dict)
-    async def _tool_call_adapter(name: str, args: dict, status: str) -> None:
-        if on_tool_call:
-            await on_tool_call({"name": name, "args": args, "status": status})
-
-    callbacks = ExecutionCallbacks(
-        on_chunk=on_chunk,
-        on_tool_call=_tool_call_adapter,
-        on_thinking=on_thinking,
-    )
-
-    # Compress old messages when approaching model context window
-    from app.services.memory_service import maybe_compress_messages as _compress
-    messages = await _compress(
-        messages,
-        model_provider=model.provider,
-        model_name=model.model,
-        max_input_tokens_override=getattr(model, 'max_input_tokens', None),
-        tenant_id=_tenant_id,
-    )
-
-    # Build execution state
-    state = ExecutionState(
-        agent_id=agent_id,
-        tenant_id=_tenant_id,
-        user_id=user_id,
-        messages=list(messages),
-        tools=tools_for_llm or [],
-        system_prompt=system_prompt,
-        llm_config={
-            "provider": model.provider,
-            "api_key": model.api_key,
-            "model": model.model,
-            "base_url": model.base_url,
-        },
-        max_rounds=_max_tool_rounds,
-        callbacks=callbacks,
-    )
-
-    # Assemble middleware stack
-    middlewares = [
-        ContextMiddleware(),
-        MemoryMiddleware(),
-        ToolReliabilityMiddleware(),
-        FallbackMiddleware(),
-    ]
-
-    engine = AgentExecutionEngine(middlewares=middlewares)
-    result = await engine.execute(state)
-
-    # Record token usage
-    if agent_id and state.accumulated_tokens > 0:
-        from app.services.token_tracker import record_token_usage
-        await record_token_usage(agent_id, state.accumulated_tokens)
-
-    return result or "[Engine returned empty content]"
 
 
 async def call_llm(
@@ -235,330 +96,28 @@ async def call_llm(
     on_chunk=None,
     on_tool_call=None,
     on_thinking=None,
+    on_event=None,
     supports_vision=False,
     memory_context: str = "",
 ) -> str:
-    """Call LLM via unified client with function-calling tool loop.
-
-    Args:
-        on_chunk: Optional async callback(text: str) for streaming chunks to client.
-        on_thinking: Optional async callback(text: str) for reasoning/thinking content.
-        on_tool_call: Optional async callback(dict) for tool call status updates.
-    """
-    # ── Feature flag gate: route to execution engine if enabled ──
-    if agent_id:
-        try:
-            from app.services.feature_flags import is_enabled
-            from app.models.agent import Agent as _FlagAgent
-            async with async_session() as _fdb:
-                _far = await _fdb.execute(select(_FlagAgent.tenant_id).where(_FlagAgent.id == agent_id))
-                _ftid = _far.scalar_one_or_none()
-                if await is_enabled(_fdb, "execution_engine_v2", tenant_id=_ftid):
-                    return await call_llm_via_engine(
-                        model, messages, agent_name, role_description,
-                        agent_id=agent_id, user_id=user_id,
-                        on_chunk=on_chunk, on_tool_call=on_tool_call,
-                        on_thinking=on_thinking, supports_vision=supports_vision,
-                        memory_context=memory_context,
-                    )
-        except Exception as e:
-            logger.warning("Feature flag gate failed for agent %s, falling back to legacy: %s", agent_id, e)
-
-    from app.services.agent_tools import AGENT_TOOLS, execute_tool, get_agent_tools_for_llm
-    from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
-
-    # ── Token limit check & config ──
-    _max_tool_rounds = 50  # default
-    if agent_id:
-        try:
-            from app.models.agent import Agent as AgentModel
-            async with async_session() as _db:
-                _ar = await _db.execute(select(AgentModel).where(AgentModel.id == agent_id))
-                _agent = _ar.scalar_one_or_none()
-                if _agent:
-                    _max_tool_rounds = _agent.max_tool_rounds or 50
-                    if _agent.max_tokens_per_day and _agent.tokens_used_today >= _agent.max_tokens_per_day:
-                        return f"⚠️ Daily token usage has reached the limit ({_agent.tokens_used_today:,}/{_agent.max_tokens_per_day:,}). Please try again tomorrow or ask admin to increase the limit."
-                    if _agent.max_tokens_per_month and _agent.tokens_used_month >= _agent.max_tokens_per_month:
-                        return f"⚠️ Monthly token usage has reached the limit ({_agent.tokens_used_month:,}/{_agent.max_tokens_per_month:,}). Please ask admin to increase the limit."
-        except Exception as e:
-            logger.warning("Token limit check failed for agent %s — proceeding without quota enforcement: %s", agent_id, e)
-    from app.services.agent_context import build_agent_context
-    # Look up current user's display name so the agent knows who it's talking to
-    _current_user_name = None
-    if user_id:
-        try:
-            from app.models.user import User as _UserModel
-            async with async_session() as _udb:
-                _ur = await _udb.execute(select(_UserModel).where(_UserModel.id == user_id))
-                _u = _ur.scalar_one_or_none()
-                if _u:
-                    _current_user_name = _u.display_name or _u.username
-        except Exception as e:
-            logger.debug("Suppressed: %s", e)
-    system_prompt = await build_agent_context(agent_id, agent_name, role_description, current_user_name=_current_user_name)
-
-    # Resolve tenant for knowledge injection and memory compression
-    _call_tenant_id = None
-    if agent_id:
-        try:
-            async with async_session() as _kdb:
-                from app.models.agent import Agent as _KAgent
-                _kr = await _kdb.execute(select(_KAgent.tenant_id).where(_KAgent.id == agent_id))
-                _call_tenant_id = _kr.scalar_one_or_none()
-        except Exception as exc:
-            logger.debug("Failed to resolve tenant: %s", exc)
-
-    # Inject relevant enterprise knowledge based on user's last message
-    if agent_id and messages and _call_tenant_id:
-        last_user_msg = next(
-            (m["content"] for m in reversed(messages) if m.get("role") == "user" and isinstance(m.get("content"), str)),
-            None,
+    """Call LLM via the unified agent runtime."""
+    result = await invoke_agent(
+        AgentInvocationRequest(
+            model=model,
+            messages=messages,
+            agent_name=agent_name,
+            role_description=role_description,
+            agent_id=agent_id,
+            user_id=user_id,
+            on_chunk=on_chunk,
+            on_tool_call=on_tool_call,
+            on_thinking=on_thinking,
+            on_event=on_event,
+            supports_vision=supports_vision,
+            memory_context=memory_context,
         )
-        if last_user_msg:
-            from app.services.knowledge_inject import fetch_relevant_knowledge
-            knowledge = await fetch_relevant_knowledge(last_user_msg, tenant_id=_call_tenant_id)
-            if knowledge:
-                system_prompt += "\n\n" + knowledge
-
-    # Load tools dynamically from DB (progressive: core tools first, expand on skill read)
-    tools_for_llm = await get_agent_tools_for_llm(agent_id, core_only=True) if agent_id else AGENT_TOOLS
-    _all_tools_cache = None  # lazy-loaded full tool set
-
-    # Compress old messages when approaching model context window
-    from app.services.memory_service import maybe_compress_messages
-    messages = await maybe_compress_messages(
-        messages,
-        model_provider=model.provider,
-        model_name=model.model,
-        max_input_tokens_override=getattr(model, 'max_input_tokens', None),
-        tenant_id=_call_tenant_id,
     )
-
-    # Inject memory context (previous summary + agent memory) into system prompt
-    if memory_context:
-        system_prompt += "\n\n" + memory_context
-
-    # Convert messages to LLMMessage format
-    api_messages = [LLMMessage(role="system", content=system_prompt)]
-    for msg in messages:
-        api_messages.append(LLMMessage(
-            role=msg.get("role", "user"),
-            content=msg.get("content"),
-            tool_calls=msg.get("tool_calls"),
-            tool_call_id=msg.get("tool_call_id"),
-        ))
-
-    # ── Vision format conversion ──
-    # If the model supports vision, convert image markers in user messages
-    # to OpenAI Vision API format: content becomes an array of parts.
-    if supports_vision:
-        import re as _re_v
-        for i, msg in enumerate(api_messages):
-            if msg.role != "user" or not msg.content or not isinstance(msg.content, str):
-                continue
-            content_str = msg.content
-            # Find [image_data:data:image/...;base64,...] markers
-            pattern = r'\[image_data:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]'
-            images = _re_v.findall(pattern, content_str)
-            if not images:
-                continue
-            # Build content array
-            text = _re_v.sub(pattern, '', content_str).strip()
-            parts = []
-            for img_url in images:
-                parts.append({"type": "image_url", "image_url": {"url": img_url}})
-            if text:
-                parts.append({"type": "text", "text": text})
-            # Replace the message content with the array format
-            api_messages[i] = LLMMessage(
-                role=msg.role,
-                content=parts,  # type: ignore  # This is valid for vision models
-            )
-    else:
-        # Strip base64 image markers for non-vision models to avoid wasting tokens
-        import re as _re_strip
-        _img_pattern = r'\[image_data:data:image/[^;]+;base64,[A-Za-z0-9+/=]+\]'
-        for i, msg in enumerate(api_messages):
-            if msg.role != "user" or not isinstance(msg.content, str):
-                continue
-            if "[image_data:" in msg.content:
-                _n_imgs = len(_re_strip.findall(_img_pattern, msg.content))
-                cleaned = _re_strip.sub(_img_pattern, '', msg.content).strip()
-                if _n_imgs > 0:
-                    cleaned += f"\n[用户发送了 {_n_imgs} 张图片，但当前模型不支持视觉，无法查看图片内容]"
-                api_messages[i] = LLMMessage(
-                    role=msg.role,
-                    content=cleaned,
-                )
-
-    # Create the unified LLM client
-    try:
-        client = create_llm_client(
-            provider=model.provider,
-            api_key=model.api_key,
-            model=model.model,
-            base_url=model.base_url,
-            timeout=120.0,
-        )
-    except Exception as e:
-        return f"[Error] Failed to create LLM client: {e}"
-
-    max_tokens = get_max_tokens(model.provider, model.model, getattr(model, 'max_output_tokens', None))
-
-    # ── Per-round token accumulator ──
-    from app.services.token_tracker import record_token_usage, extract_usage_tokens, estimate_tokens_from_chars
-    _accumulated_tokens = 0
-
-    # Tool-calling loop (configurable per agent, default 50)
-    for round_i in range(_max_tool_rounds):
-        # ── Dynamic tool-call limit warning (Aware engine) ──
-        # Don't tell the agent about limits at the start — only warn when approaching.
-        # This prevents models from rushing to complete tasks prematurely.
-        _warn_threshold_80 = int(_max_tool_rounds * 0.8)
-        _warn_threshold_96 = _max_tool_rounds - 2
-        if round_i == _warn_threshold_80:
-            api_messages.append(LLMMessage(
-                role="system",
-                content=(
-                    f"⚠️ 你已使用 {round_i}/{_max_tool_rounds} 轮工具调用。"
-                    "如果当前任务尚未完成，请尽快保存进度到 focus.md，"
-                    "并使用 set_trigger 设置续接触发器，在剩余轮次中做好收尾。"
-                ),
-            ))
-        elif round_i == _warn_threshold_96:
-            api_messages.append(LLMMessage(
-                role="system",
-                content=f"🚨 仅剩 2 轮工具调用。请立即保存进度到 focus.md 并设置续接触发器。",
-            ))
-
-        try:
-            # Use streaming API for real-time responses
-            response = await client.stream(
-                messages=api_messages,
-                tools=tools_for_llm if tools_for_llm else None,
-                temperature=0.7,
-                max_tokens=max_tokens,
-                on_chunk=on_chunk,
-                on_thinking=on_thinking,
-            )
-        except LLMError as e:
-            # Record accumulated tokens before returning error
-            logger.error(
-                f"[LLM] LLMError provider={getattr(model, 'provider', '?')} "
-                f"model={getattr(model, 'model', '?')} round={round_i + 1}: {e}"
-            )
-            if agent_id and _accumulated_tokens > 0:
-                await record_token_usage(agent_id, _accumulated_tokens)
-            return f"[LLM Error] {e}"
-        except Exception as e:
-            logger.error(
-                f"[LLM] Unexpected error provider={getattr(model, 'provider', '?')} "
-                f"model={getattr(model, 'model', '?')} round={round_i + 1}: "
-                f"{type(e).__name__}: {str(e)[:300]}"
-            )
-            if agent_id and _accumulated_tokens > 0:
-                await record_token_usage(agent_id, _accumulated_tokens)
-            return f"[LLM call error] {type(e).__name__}: {str(e)[:200]}"
-
-        # ── Track tokens for this round ──
-        real_tokens = extract_usage_tokens(response.usage)
-        if real_tokens:
-            _accumulated_tokens += real_tokens
-        else:
-            # Fallback: estimate from message content length
-            round_chars = sum(len(m.content or '') if isinstance(m.content, str) else 0 for m in api_messages) + len(response.content or '')
-            _accumulated_tokens += estimate_tokens_from_chars(round_chars)
-
-        # If no tool calls, return the final content
-        if not response.tool_calls:
-            if agent_id and _accumulated_tokens > 0:
-                await record_token_usage(agent_id, _accumulated_tokens)
-            await client.close()
-            return response.content or "[LLM returned empty content]"
-
-        # Execute tool calls
-        logger.info(f"[LLM] Round {round_i+1}: {len(response.tool_calls)} tool call(s)")
-
-        # Add assistant message with tool calls
-        api_messages.append(LLMMessage(
-            role="assistant",
-            content=response.content or None,
-            tool_calls=[{
-                "id": tc["id"],
-                "type": "function",
-                "function": tc["function"],
-            } for tc in response.tool_calls],
-            reasoning_content=response.reasoning_content,
-        ))
-
-        full_reasoning_content = response.reasoning_content or ""
-
-        for tc in response.tool_calls:
-            fn = tc["function"]
-            tool_name = fn["name"]
-            raw_args = fn.get("arguments", "{}")
-            logger.debug(f"[LLM] Raw arguments for {tool_name}: {repr(raw_args[:300])}")
-            try:
-                args = json.loads(raw_args) if raw_args else {}
-            except json.JSONDecodeError:
-                args = {}
-
-            logger.info(f"[LLM] Calling tool: {tool_name}({args})")
-            # Notify client about tool call (in-progress)
-            if on_tool_call:
-                try:
-                    await on_tool_call({
-                        "name": tool_name,
-                        "args": args,
-                        "status": "running",
-                        "reasoning_content": full_reasoning_content
-                    })
-                except Exception as e:
-                    logger.debug("Suppressed: %s", e)
-
-            result = await execute_tool(
-                tool_name, args,
-                agent_id=agent_id,
-                user_id=user_id or agent_id,
-            )
-            logger.debug(f"[LLM] Tool result: {result[:100]}")
-
-            # Progressive tool loading: expand tool set when agent reads a skill file
-            # or after 3 rounds of tool calls (agent is actively working)
-            if _all_tools_cache is None:
-                _should_expand = (
-                    (tool_name == "read_file" and "SKILL.md" in str(args.get("path", "")))
-                    or round_i >= 2  # Auto-expand after 3rd round
-                )
-                if _should_expand:
-                    _all_tools_cache = await get_agent_tools_for_llm(agent_id, core_only=False)
-                    tools_for_llm = _all_tools_cache
-
-            # Notify client about tool call result
-            if on_tool_call:
-                try:
-                    await on_tool_call({
-                        "name": tool_name,
-                        "args": args,
-                        "status": "done",
-                        "result": result,
-                        "reasoning_content": full_reasoning_content
-                    })
-                except Exception as e:
-                    logger.debug("Suppressed: %s", e)
-
-            api_messages.append(LLMMessage(
-                role="tool",
-                tool_call_id=tc["id"],
-                content=str(result),
-            ))
-
-    # Record tokens even on "too many rounds" exit
-    if agent_id and _accumulated_tokens > 0:
-        await record_token_usage(agent_id, _accumulated_tokens)
-    await client.close()
-    return "[Error] Too many tool call rounds"
+    return result.content
 
 
 @router.websocket("/ws/chat/{agent_id}")
@@ -882,12 +441,16 @@ async def websocket_chat(
                     
                     async def stream_to_ws(text: str):
                         """Send each chunk to client in real-time."""
+                        from app.services.chat_message_parts import build_chunk_event
+
                         partial_chunks.append(text)
-                        await websocket.send_json({"type": "chunk", "content": text})
-                    
+                        await websocket.send_json(build_chunk_event(text))
+
                     async def tool_call_to_ws(data: dict):
                         """Send tool call info to client and persist completed ones."""
-                        await websocket.send_json({"type": "tool_call", **data})
+                        from app.services.chat_message_parts import build_tool_call_event
+
+                        await websocket.send_json(build_tool_call_event(data))
                         # Save completed tool calls to DB so they persist in chat history
                         if data.get("status") == "done":
                             try:
@@ -916,8 +479,38 @@ async def websocket_chat(
                     
                     async def thinking_to_ws(text: str):
                         """Send thinking chunks to client for collapsible display."""
+                        from app.services.chat_message_parts import build_thinking_event
+
                         thinking_content.append(text)
-                        await websocket.send_json({"type": "thinking", "content": text})
+                        await websocket.send_json(build_thinking_event(text))
+
+                    async def runtime_event_to_ws(data: dict):
+                        from app.services.chat_message_parts import (
+                            build_compaction_event,
+                            build_permission_event,
+                        )
+
+                        if data.get("type") == "permission":
+                            event_payload = build_permission_event(data)
+                        elif data.get("type") == "session_compact":
+                            event_payload = build_compaction_event(data)
+                        else:
+                            event_payload = data
+                        await websocket.send_json(event_payload)
+                        if data.get("type") in {"permission", "session_compact"}:
+                            try:
+                                async with async_session() as _event_db:
+                                    event_msg = ChatMessage(
+                                        agent_id=agent_id,
+                                        user_id=user_id,
+                                        role="system",
+                                        content=json.dumps(data, ensure_ascii=False),
+                                        conversation_id=conv_id,
+                                    )
+                                    _event_db.add(event_msg)
+                                    await _event_db.commit()
+                            except Exception as _event_err:
+                                logger.warning(f"[WS] Failed to save runtime event: {_event_err}")
 
                     import asyncio as _aio
 
@@ -932,6 +525,7 @@ async def websocket_chat(
                         on_chunk=stream_to_ws,
                         on_tool_call=tool_call_to_ws,
                         on_thinking=thinking_to_ws,
+                        on_event=runtime_event_to_ws,
                         supports_vision=getattr(llm_model, 'supports_vision', False),
                         memory_context=_memory_context,
                     ))
@@ -1013,6 +607,7 @@ async def websocket_chat(
                                 on_chunk=stream_to_ws,
                                 on_tool_call=tool_call_to_ws,
                                 on_thinking=thinking_to_ws,
+                                on_event=runtime_event_to_ws,
                                 supports_vision=getattr(fallback_llm_model, 'supports_vision', False),
                                 memory_context=_memory_context,
                             )
@@ -1070,11 +665,14 @@ async def websocket_chat(
             logger.info("[WS] Assistant message saved")
 
             # Send done signal with final content (for non-streaming clients)
-            await websocket.send_json({
-                "type": "done",
-                "role": "assistant",
-                "content": assistant_response,
-            })
+            from app.services.chat_message_parts import build_done_event
+
+            await websocket.send_json(
+                build_done_event(
+                    assistant_response,
+                    thinking="".join(thinking_content) if thinking_content else None,
+                )
+            )
             logger.info("[WS] Response done sent to client")
 
     except WebSocketDisconnect:

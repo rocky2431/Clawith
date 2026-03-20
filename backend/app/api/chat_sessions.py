@@ -15,6 +15,7 @@ from app.models.audit import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.agent import Agent
 from app.models.user import User
+from app.services.chat_message_parts import serialize_chat_message, split_inline_tools
 
 router = APIRouter(prefix="/agents", tags=["chat-sessions"])
 
@@ -318,92 +319,15 @@ async def get_session_messages(
         sender_name = sender_cache.get(str(m.participant_id)) if m.participant_id else None
 
         if m.role == "tool_call":
-            import json
-            entry: dict = {"role": m.role, "content": m.content, "created_at": m.created_at.isoformat() if m.created_at else None}
-            try:
-                data = json.loads(m.content)
-                entry["content"] = ""
-                entry["toolName"] = data.get("name", "")
-                entry["toolArgs"] = data.get("args")
-                entry["toolStatus"] = data.get("status", "done")
-                entry["toolResult"] = data.get("result", "")
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).debug("Tool call parse failed: %s", e)
-            if sender_name:
-                entry["sender_name"] = sender_name
-            out.append(entry)
+            out.append(serialize_chat_message(m, sender_name=sender_name))
             continue
 
         # For agent sessions, parse inline tool_code blocks from assistant messages
         if session.source_channel == "agent" and m.role == "assistant" and "```tool_code" in (m.content or ""):
-            parts = _split_inline_tools(m.content)
+            parts = split_inline_tools(m.content, sender_name=sender_name)
             for part in parts:
-                if sender_name:
-                    part["sender_name"] = sender_name
                 out.append(part)
         else:
-            entry = {"role": m.role, "content": m.content, "created_at": m.created_at.isoformat() if m.created_at else None}
-            if hasattr(m, 'thinking') and m.thinking:
-                entry["thinking"] = m.thinking
-            if sender_name:
-                entry["sender_name"] = sender_name
-            out.append(entry)
+            out.append(serialize_chat_message(m, sender_name=sender_name))
 
     return out
-
-
-import re
-
-def _split_inline_tools(content: str) -> list[dict]:
-    """Parse assistant content containing inline ```tool_code blocks.
-
-    Splits into alternating text segments and tool_call entries.
-    Format: ```tool_code\ntool_name\n``` ```json\n{args}\n```
-    """
-    # Pattern: ```tool_code\n<name>\n``` optionally followed by ```json\n<args>\n```
-    pattern = re.compile(
-        r'```tool_code\s*\n\s*(\w+)\s*\n```'        # tool name
-        r'(?:\s*```json\s*\n(.*?)\n```)?',            # optional JSON args
-        re.DOTALL
-    )
-
-    parts: list[dict] = []
-    last_end = 0
-
-    for match in pattern.finditer(content):
-        # Text before this tool call
-        text_before = content[last_end:match.start()].strip()
-        if text_before:
-            parts.append({"role": "assistant", "content": text_before})
-
-        tool_name = match.group(1)
-        args_str = match.group(2)
-        tool_args = None
-        if args_str:
-            try:
-                import json
-                tool_args = json.loads(args_str.strip())
-            except Exception:
-                tool_args = {"raw": args_str.strip()}
-
-        parts.append({
-            "role": "tool_call",
-            "content": "",
-            "toolName": tool_name,
-            "toolArgs": tool_args,
-            "toolStatus": "done",
-            "toolResult": "",
-        })
-        last_end = match.end()
-
-    # Trailing text after last tool
-    trailing = content[last_end:].strip()
-    if trailing:
-        parts.append({"role": "assistant", "content": trailing})
-
-    # If no matches found, return the whole content as-is
-    if not parts:
-        parts.append({"role": "assistant", "content": content})
-
-    return parts

@@ -1117,7 +1117,7 @@ function FeatureFlagsTab() {
                 <div className="card" style={{ marginBottom: '16px', padding: '16px' }}>
                     <h3 style={{ marginBottom: '12px' }}>{t('enterprise.flags.create')}</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                        <input className="input" placeholder="Flag key (e.g. execution_engine_v2)" value={form.key}
+                        <input className="input" placeholder="Flag key (e.g. unified_agent_runtime)" value={form.key}
                             onChange={e => setForm({ ...form, key: e.target.value })} />
                         <select className="input" value={form.flag_type}
                             onChange={e => setForm({ ...form, flag_type: e.target.value })}>

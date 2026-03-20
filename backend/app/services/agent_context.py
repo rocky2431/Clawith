@@ -141,7 +141,7 @@ def _load_skills_index(agent_id: uuid.UUID) -> str:
 
     lines.append("")
     lines.append("⚠️ SKILL USAGE RULES:")
-    lines.append("1. When a user request matches a skill, FIRST call `read_file` with the File path above to load the full instructions.")
+    lines.append("1. When a user request matches a skill, FIRST call `load_skill` with the Skill name above to load the full instructions.")
     lines.append("2. Follow the loaded instructions to complete the task.")
     lines.append("3. Do NOT guess what the skill contains — always read it first.")
     lines.append("4. Folder-based skills may contain auxiliary files (scripts/, references/, examples/). Use `list_files` on the skill folder to discover them.")
@@ -322,7 +322,7 @@ async def build_agent_context(agent_id: uuid.UUID, agent_name: str, role_descrip
 1. **ALWAYS call tools for file operations -- NEVER pretend or fabricate results.**
 2. **NEVER claim you completed an action without calling the tool.**
 3. **Reply in the same language the user uses.**
-4. **You have skills in your skills/ directory.** Read them when you need specific capabilities (workspace management, trigger setup, web research, etc.).
+4. **You have skills in your skills/ directory.** Use `load_skill` when you need specific capabilities (workspace management, trigger setup, web research, etc.).
 5. **Use `write_file` to update focus.md** with your current focus items using checklist format: `- [ ] item_name: description`""")
 
 

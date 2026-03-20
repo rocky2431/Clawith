@@ -14,6 +14,9 @@ from datetime import datetime, timezone, timedelta
 from loguru import logger
 from sqlalchemy import select
 
+from app.runtime.invoker import AgentInvocationRequest, invoke_agent
+from app.services.agent_tools import execute_tool
+
 # Default heartbeat instruction used when HEARTBEAT.md doesn't exist
 DEFAULT_HEARTBEAT_INSTRUCTION = """[Heartbeat Check]
 
@@ -115,6 +118,83 @@ def _is_in_active_hours(active_hours: str, tz_name: str = "UTC") -> bool:
         return True  # Default to active if parsing fails
 
 
+def _load_heartbeat_instruction(agent_id: uuid.UUID) -> str:
+    """Read HEARTBEAT.md if present, otherwise fall back to the default instruction."""
+    from pathlib import Path
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    heartbeat_instruction = DEFAULT_HEARTBEAT_INSTRUCTION
+
+    for ws_root in [
+        Path("/tmp/clawith_workspaces") / str(agent_id),
+        Path(settings.AGENT_DATA_DIR) / str(agent_id),
+    ]:
+        hb_file = ws_root / "HEARTBEAT.md"
+        if not hb_file.exists():
+            continue
+        try:
+            custom = hb_file.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            custom = ""
+        if not custom:
+            break
+        return custom + """
+
+⚠️ PRIVACY RULES — STRICTLY FOLLOW:
+- NEVER share information from private user conversations
+- NEVER share content from memory/memory.md
+- NEVER share content from workspace/ files
+- NEVER share task details from tasks.json
+- You may ONLY share: general work insights, public information, opinions on plaza posts
+
+⚠️ POSTING LIMITS per heartbeat:
+- Maximum 1 new post
+- Maximum 2 comments on existing posts
+- Do NOT post trivial or repetitive content
+"""
+
+    return heartbeat_instruction
+
+
+def _format_recent_activity_context(recent_activities: list) -> str:
+    if not recent_activities:
+        return ""
+
+    items = []
+    for act in reversed(recent_activities):
+        ts = act.created_at.strftime("%m-%d %H:%M") if act.created_at else ""
+        items.append(f"- [{ts}] {act.action_type}: {act.summary[:120]}")
+    return (
+        "\n\n---\n## Recent Activity Context\n"
+        "Here are your recent interactions and work to help you identify relevant topics:\n\n"
+        + "\n".join(items)
+    )
+
+
+def _build_heartbeat_tool_executor(agent_id: uuid.UUID, creator_id: uuid.UUID):
+    """Build a tool executor with per-heartbeat plaza posting limits."""
+    plaza_posts_made = 0
+    plaza_comments_made = 0
+
+    async def _executor(tool_name: str, args: dict) -> str:
+        nonlocal plaza_posts_made, plaza_comments_made
+
+        if tool_name == "plaza_create_post":
+            if plaza_posts_made >= 1:
+                return "[BLOCKED] You have already made 1 plaza post this heartbeat. Do not post again."
+            plaza_posts_made += 1
+        elif tool_name == "plaza_add_comment":
+            if plaza_comments_made >= 2:
+                return "[BLOCKED] You have already made 2 comments this heartbeat. Do not comment again."
+            plaza_comments_made += 1
+
+        return await execute_tool(tool_name, args, agent_id, creator_id)
+
+    return _executor
+
+
 async def _execute_heartbeat(agent_id: uuid.UUID):
     """Execute a single heartbeat for an agent."""
     try:
@@ -137,47 +217,8 @@ async def _execute_heartbeat(agent_id: uuid.UUID):
             if not model:
                 return
 
-            # Read HEARTBEAT.md if it exists, otherwise use default
-            from pathlib import Path
-            from app.config import get_settings
-            settings = get_settings()
-
-            heartbeat_instruction = DEFAULT_HEARTBEAT_INSTRUCTION
-            for ws_root in [
-                Path("/tmp/clawith_workspaces") / str(agent_id),
-                Path(settings.AGENT_DATA_DIR) / str(agent_id),
-            ]:
-                hb_file = ws_root / "HEARTBEAT.md"
-                if hb_file.exists():
-                    try:
-                        custom = hb_file.read_text(encoding="utf-8", errors="replace").strip()
-                        if custom:
-                            # Prepend privacy rules to custom heartbeat
-                            heartbeat_instruction = custom + """
-
-⚠️ PRIVACY RULES — STRICTLY FOLLOW:
-- NEVER share information from private user conversations
-- NEVER share content from memory/memory.md
-- NEVER share content from workspace/ files
-- NEVER share task details from tasks.json
-- You may ONLY share: general work insights, public information, opinions on plaza posts
-
-⚠️ POSTING LIMITS per heartbeat:
-- Maximum 1 new post
-- Maximum 2 comments on existing posts
-- Do NOT post trivial or repetitive content
-"""
-                    except Exception:
-                        pass
-                    break
-
-            # Build context
-            from app.services.agent_context import build_agent_context
-            system_prompt = await build_agent_context(agent_id, agent.name, agent.role_description or "")
-
             # Fetch recent activity to give heartbeat context for curiosity exploration
             from app.models.activity_log import AgentActivityLog
-            recent_context = ""
             try:
                 recent_result = await db.execute(
                     select(AgentActivityLog)
@@ -187,131 +228,27 @@ async def _execute_heartbeat(agent_id: uuid.UUID):
                     .limit(50)
                 )
                 recent_activities = recent_result.scalars().all()
-                if recent_activities:
-                    items = []
-                    for act in reversed(recent_activities):  # chronological order
-                        ts = act.created_at.strftime("%m-%d %H:%M") if act.created_at else ""
-                        items.append(f"- [{ts}] {act.action_type}: {act.summary[:120]}")
-                    recent_context = "\n\n---\n## Recent Activity Context\nHere are your recent interactions and work to help you identify relevant topics:\n\n" + "\n".join(items)
+                recent_context = _format_recent_activity_context(recent_activities)
             except Exception as e:
                 logger.warning(f"Failed to fetch recent activity for heartbeat context: {e}")
+                recent_context = ""
 
-            full_instruction = heartbeat_instruction + recent_context
+            full_instruction = _load_heartbeat_instruction(agent_id) + recent_context
 
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_instruction},
-            ]
-
-            # Call LLM with tools using unified client
-            from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
-            from app.services.agent_tools import execute_tool, get_agent_tools_for_llm
-
-            try:
-                client = create_llm_client(
-                    provider=model.provider,
-                    api_key=model.api_key,
-                    model=model.model,
-                    base_url=model.base_url,
-                    timeout=120.0,
+            result = await invoke_agent(
+                AgentInvocationRequest(
+                    model=model,
+                    messages=[{"role": "user", "content": full_instruction}],
+                    agent_name=agent.name,
+                    role_description=agent.role_description or "",
+                    agent_id=agent_id,
+                    user_id=agent.creator_id,
+                    tool_executor=_build_heartbeat_tool_executor(agent_id, agent.creator_id),
+                    core_tools_only=False,
+                    max_tool_rounds=20,
                 )
-            except Exception as e:
-                logger.error(f"Failed to create LLM client: {e}")
-                return
-
-            tools_for_llm = await get_agent_tools_for_llm(agent_id)
-
-            reply = ""
-            plaza_posts_made = 0       # hard limit: 1 new post per heartbeat
-            plaza_comments_made = 0    # hard limit: 2 comments per heartbeat
-            _hb_accumulated_tokens = 0
-
-            # Token tracking helpers
-            from app.services.token_tracker import record_token_usage, extract_usage_tokens, estimate_tokens_from_chars
-
-            # Convert messages to LLMMessage format
-            llm_messages = [
-                LLMMessage(role=m["role"], content=m["content"]) for m in messages
-            ]
-
-            for round_i in range(20):  # More rounds for search + write + plaza
-                try:
-                    response = await client.complete(
-                        messages=llm_messages,
-                        tools=tools_for_llm,
-                        temperature=0.7,
-                        max_tokens=get_max_tokens(model.provider, model.model, getattr(model, 'max_output_tokens', None)),
-                    )
-                except LLMError as e:
-                    logger.error(f"LLM error in heartbeat: {e}")
-                    reply = ""
-                    break
-                except Exception as e:
-                    logger.error(f"LLM call error in heartbeat: {e}")
-                    reply = ""
-                    break
-
-                # Track tokens for this round
-                real_tokens = extract_usage_tokens(response.usage)
-                if real_tokens:
-                    _hb_accumulated_tokens += real_tokens
-                else:
-                    round_chars = sum(len(m.content or '') for m in llm_messages) + len(response.content or '')
-                    _hb_accumulated_tokens += estimate_tokens_from_chars(round_chars)
-
-                if response.tool_calls:
-                    # Add assistant message with tool calls
-                    llm_messages.append(LLMMessage(
-                        role="assistant",
-                        content=response.content or None,
-                        tool_calls=[{
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": tc["function"],
-                        } for tc in response.tool_calls],
-                        reasoning_content=response.reasoning_content,
-                    ))
-
-                    for tc in response.tool_calls:
-                        fn = tc["function"]
-                        tool_name = fn["name"]
-                        try:
-                            args = json.loads(fn["arguments"]) if fn.get("arguments") else {}
-                        except Exception:
-                            args = {}
-
-                        # ── Hard rate limits for plaza actions ──
-                        if tool_name == "plaza_create_post":
-                            if plaza_posts_made >= 1:
-                                tool_result = "[BLOCKED] You have already made 1 plaza post this heartbeat. Do not post again."
-                            else:
-                                tool_result = await execute_tool(tool_name, args, agent_id, agent.creator_id)
-                                plaza_posts_made += 1
-                        elif tool_name == "plaza_add_comment":
-                            if plaza_comments_made >= 2:
-                                tool_result = "[BLOCKED] You have already made 2 comments this heartbeat. Do not comment again."
-                            else:
-                                tool_result = await execute_tool(tool_name, args, agent_id, agent.creator_id)
-                                plaza_comments_made += 1
-                        else:
-                            tool_result = await execute_tool(tool_name, args, agent_id, agent.creator_id)
-
-                        llm_messages.append(LLMMessage(
-                            role="tool",
-                            tool_call_id=tc["id"],
-                            content=str(tool_result),
-                        ))
-                else:
-                    reply = response.content or ""
-                    break
-            else:
-                reply = ""
-
-            await client.close()
-
-            # Record accumulated heartbeat token usage
-            if _hb_accumulated_tokens > 0:
-                await record_token_usage(agent_id, _hb_accumulated_tokens)
+            )
+            reply = result.content
 
             # Suppress HEARTBEAT_OK
             is_ok = "HEARTBEAT_OK" in reply.upper().replace(" ", "_") if reply else False

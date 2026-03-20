@@ -1,11 +1,5 @@
-"""Background task executor — runs LLM to complete tasks automatically.
+"""Background task executor — runs agent tasks through the unified runtime."""
 
-Uses the same agent context (soul, memory, skills, relationships, tools)
-as the chat dialog. Supports tool-calling loop for autonomous execution.
-"""
-
-import asyncio
-import json
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +10,40 @@ from app.database import async_session
 from app.models.agent import Agent
 from app.models.llm import LLMModel
 from app.models.task import Task, TaskLog
+from app.runtime.invoker import AgentInvocationRequest, invoke_agent
+
+
+TASK_EXECUTION_ADDENDUM = """## Task Execution Mode
+
+You are now in TASK EXECUTION MODE (not a conversation). A task has been assigned to you.
+- Focus on completing the task as thoroughly as possible.
+- Break down complex tasks into steps and execute each step.
+- Use your tools actively to gather information, send messages, read/write files, etc.
+- Provide a detailed execution report at the end.
+- If the task involves contacting someone, use `send_feishu_message` to reach them.
+- If the task requires data or information, use your tools to fetch it.
+- Do NOT ask the user follow-up questions — take initiative and complete the task autonomously.
+"""
+
+
+def _build_task_user_prompt(
+    task_type: str,
+    task_title: str,
+    task_description: str,
+    supervision_target: str,
+) -> str:
+    if task_type == "supervision":
+        user_prompt = f"[督办任务] {task_title}"
+        if task_description:
+            user_prompt += f"\n任务描述: {task_description}"
+        if supervision_target:
+            user_prompt += f"\n督办对象: {supervision_target}"
+        return user_prompt + "\n\n请执行此督办任务：联系督办对象，了解进展，并汇报结果。"
+
+    user_prompt = f"[任务执行] {task_title}"
+    if task_description:
+        user_prompt += f"\n任务描述: {task_description}"
+    return user_prompt + "\n\n请认真完成此任务，给出详细的执行结果。"
 
 
 async def execute_task(task_id: uuid.UUID, agent_id: uuid.UUID) -> None:
@@ -76,135 +104,31 @@ async def execute_task(task_id: uuid.UUID, agent_id: uuid.UUID) -> None:
         agent_name = agent.name
         creator_id = agent.creator_id
 
-    # Step 3: Build full agent context (same as chat dialog)
-    from app.services.agent_context import build_agent_context
-    system_prompt = await build_agent_context(agent_id, agent_name, agent.role_description or "")
+    user_prompt = _build_task_user_prompt(
+        task_type,
+        task_title,
+        task_description,
+        supervision_target,
+    )
 
-    # Add task-execution-specific instructions
-    task_addendum = """
-
-## Task Execution Mode
-
-You are now in TASK EXECUTION MODE (not a conversation). A task has been assigned to you.
-- Focus on completing the task as thoroughly as possible.
-- Break down complex tasks into steps and execute each step.
-- Use your tools actively to gather information, send messages, read/write files, etc.
-- Provide a detailed execution report at the end.
-- If the task involves contacting someone, use `send_feishu_message` to reach them.
-- If the task requires data or information, use your tools to fetch it.
-- Do NOT ask the user follow-up questions — take initiative and complete the task autonomously.
-"""
-    system_prompt += task_addendum
-
-    # Build user prompt
-    if task_type == 'supervision':
-        user_prompt = f"[督办任务] {task_title}"
-        if task_description:
-            user_prompt += f"\n任务描述: {task_description}"
-        if supervision_target:
-            user_prompt += f"\n督办对象: {supervision_target}"
-        user_prompt += "\n\n请执行此督办任务：联系督办对象，了解进展，并汇报结果。"
-    else:
-        user_prompt = f"[任务执行] {task_title}"
-        if task_description:
-            user_prompt += f"\n任务描述: {task_description}"
-        user_prompt += "\n\n请认真完成此任务，给出详细的执行结果。"
-
-    # Step 4: Call LLM with tool loop
-    from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
-
-    messages = [
-        LLMMessage(role="system", content=system_prompt),
-        LLMMessage(role="user", content=user_prompt),
-    ]
-
-    # Normalize base_url
-    if not model.base_url:
-        await _log_error(task_id, f"未配置 {model.provider} 的 API 地址")
-        if task_type == 'supervision':
-            await _restore_supervision_status(task_id)
-        return
-
-    # Create unified LLM client
+    # Step 4: Call unified runtime
     try:
-        client = create_llm_client(
-            provider=model.provider,
-            api_key=model.api_key,
-            model=model.model,
-            base_url=model.base_url,
-            timeout=1200.0,
+        logger.info(f"[TaskExec] Invoking unified runtime for task: {task_title}")
+        result = await invoke_agent(
+            AgentInvocationRequest(
+                model=model,
+                messages=[{"role": "user", "content": user_prompt}],
+                agent_name=agent_name,
+                role_description=agent.role_description or "",
+                agent_id=agent_id,
+                user_id=creator_id,
+                system_prompt_suffix=TASK_EXECUTION_ADDENDUM,
+                core_tools_only=False,
+                max_tool_rounds=getattr(agent, "max_tool_rounds", None),
+            )
         )
-    except Exception as e:
-        await _log_error(task_id, f"创建 LLM 客户端失败: {e}")
-        if task_type == 'supervision':
-            await _restore_supervision_status(task_id)
-        return
-
-    # Load tools (same as chat dialog)
-    from app.services.agent_tools import execute_tool, get_agent_tools_for_llm
-    tools_for_llm = await get_agent_tools_for_llm(agent_id)
-
-    try:
-        logger.info(f"[TaskExec] Calling LLM with tools for task: {task_title}")
-        reply = ""
-
-        # Tool-calling loop (max 50 rounds for task execution)
-        for round_i in range(50):
-            try:
-                response = await client.complete(
-                    messages=messages,
-                    tools=tools_for_llm if tools_for_llm else None,
-                    temperature=0.7,
-                    max_tokens=get_max_tokens(model.provider, model.model, getattr(model, 'max_output_tokens', None)),
-                )
-            except LLMError as e:
-                await _log_error(task_id, f"LLM 错误: {e}")
-                if task_type == 'supervision':
-                    await _restore_supervision_status(task_id)
-                return
-            except Exception as e:
-                await _log_error(task_id, f"调用模型失败: {str(e)[:200]}")
-                if task_type == 'supervision':
-                    await _restore_supervision_status(task_id)
-                return
-
-            if response.tool_calls:
-                # Add assistant message with tool calls
-                messages.append(LLMMessage(
-                    role="assistant",
-                    content=response.content or None,
-                    tool_calls=[{
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": tc["function"],
-                    } for tc in response.tool_calls],
-                    reasoning_content=response.reasoning_content,
-                ))
-
-                for tc in response.tool_calls:
-                    fn = tc["function"]
-                    tool_name = fn["name"]
-                    raw_args = fn.get("arguments", "{}")
-                    logger.info(f"[TaskExec] Round {round_i+1} calling tool: {tool_name}({json.dumps(raw_args, ensure_ascii=False)[:100]})")
-                    try:
-                        args = json.loads(raw_args) if raw_args else {}
-                    except Exception:
-                        args = {}
-
-                    tool_result = await execute_tool(tool_name, args, agent_id, creator_id)
-                    messages.append(LLMMessage(
-                        role="tool",
-                        tool_call_id=tc["id"],
-                        content=str(tool_result),
-                    ))
-            else:
-                reply = response.content or ""
-                break
-        else:
-            reply = "(已达到最大工具调用轮数)"
-
-        await client.close()
-        logger.info(f"[TaskExec] LLM reply: {reply[:80]}")
+        reply = result.content
+        logger.info(f"[TaskExec] Runtime reply: {reply[:80]}")
     except Exception as e:
         error_msg = str(e) or repr(e)
         logger.error(f"[TaskExec] Error: {error_msg}")

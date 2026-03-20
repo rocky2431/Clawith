@@ -9,6 +9,7 @@ import FileBrowser from '../components/FileBrowser';
 import ChannelConfig from '../components/ChannelConfig';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import PromptModal from '../components/PromptModal';
+import { applyStreamEvent, hydrateTimelineMessage, type TimelineMessage } from '../lib/chatParts.ts';
 import { activityApi, agentApi, channelApi, enterpriseApi, fileApi, scheduleApi, skillApi, taskApi, triggerApi, uploadFileWithProgress } from '../services/api';
 import { useAuthStore } from '../stores';
 
@@ -36,6 +37,8 @@ const getCategoryLabels = (t: any): Record<string, string> => ({
     custom: t('agent.toolCategories.custom'),
     general: t('agent.toolCategories.general'),
 });
+
+type ChatMsg = TimelineMessage;
 
 function ConfigVersionHistory({ agentId }: { agentId: string }) {
     const { t } = useTranslation();
@@ -920,19 +923,19 @@ function AgentDetailInner() {
         const res = await fetch(`/api/v1/agents/${id}/sessions/${sess.id}/messages`, { headers: { Authorization: `Bearer ${tkn}` } });
         if (res.ok) {
             const msgs = await res.json();
+            const normalizedMsgs = msgs.map((m: any) => (
+                m.role === 'tool_result'
+                    ? { ...m, timestamp: m.created_at || undefined }
+                    : parseChatMsg(m)
+            ));
             // Agent-to-agent sessions are always read-only
             const isAgentSession = sess.source_channel === 'agent' || sess.participant_type === 'agent';
             if (!isAgentSession && sess.user_id === String(currentUser?.id)) {
                 // Own session: load into chatMessages so WS can append new replies seamlessly
-                setChatMessages(msgs.map((m: any) => parseChatMsg({
-                    role: m.role, content: m.content,
-                    ...(m.toolName && { toolName: m.toolName, toolArgs: m.toolArgs, toolStatus: m.toolStatus, toolResult: m.toolResult }),
-                    ...(m.thinking && { thinking: m.thinking }),
-                    ...(m.created_at && { timestamp: m.created_at }),
-                })));
+                setChatMessages(normalizedMsgs.filter((m: any) => m.role !== 'tool_result'));
             } else {
                 // Other user's session or agent-to-agent: read-only view
-                setHistoryMsgs(msgs);
+                setHistoryMsgs(normalizedMsgs);
             }
         }
     };
@@ -941,6 +944,10 @@ function AgentDetailInner() {
     const token = useAuthStore((s) => s.token);
     const currentUser = useAuthStore((s) => s.user);
     const isAdmin = currentUser?.role === 'platform_admin' || currentUser?.role === 'org_admin';
+    const resolveHistoryImageUrl = (fileName: string) => {
+        if (!id || !token) return undefined;
+        return `/api/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(fileName)}&token=${token}`;
+    };
 
     // Expiry editor modal state
     const [showExpiryModal, setShowExpiryModal] = useState(false);
@@ -975,7 +982,6 @@ function AgentDetailInner() {
         } catch (e) { alert('Failed: ' + e); }
         setExpirySaving(false);
     };
-    interface ChatMsg { role: 'user' | 'assistant' | 'tool_call'; content: string; fileName?: string; toolName?: string; toolArgs?: any; toolStatus?: 'running' | 'done'; toolResult?: string; thinking?: string; imageUrl?: string; timestamp?: string; }
     const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
     const [chatInput, setChatInput] = useState('');
     const [wsConnected, setWsConnected] = useState(false);
@@ -1050,33 +1056,36 @@ function AgentDetailInner() {
 
     // Load chat history + connect websocket when chat tab is active
     const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
-    const parseChatMsg = (msg: ChatMsg): ChatMsg => {
-        if (msg.role !== 'user') return msg;
-        let parsed = { ...msg };
-        // Standard web chat format: [file:name.pdf]\ncontent
-        const newFmt = msg.content.match(/^\[file:([^\]]+)\]\n?/);
-        if (newFmt) { parsed = { ...msg, fileName: newFmt[1], content: msg.content.slice(newFmt[0].length).trim() }; }
-        // Feishu/Slack channel format: [文件已上传: workspace/uploads/name]
-        const chanFmt = !newFmt && msg.content.match(/^\[\u6587\u4ef6\u5df2\u4e0a\u4f20: (?:workspace\/uploads\/)?([^\]\n]+)\]/);
-        if (chanFmt) {
-            const raw = chanFmt[1]; const fileName = raw.split('/').pop() || raw;
-            parsed = { ...msg, fileName, content: msg.content.slice(chanFmt[0].length).trim() };
+    const parseChatMsg = (msg: Record<string, unknown>): ChatMsg => {
+        return hydrateTimelineMessage(msg, {
+            resolveImageUrl: resolveHistoryImageUrl,
+        });
+    };
+
+    const hasToolArgs = (toolArgs: unknown): toolArgs is Record<string, unknown> => (
+        typeof toolArgs === 'object'
+        && toolArgs !== null
+        && Object.keys(toolArgs).length > 0
+    );
+
+    const formatToolArgsSummary = (toolArgs: unknown) => {
+        if (!hasToolArgs(toolArgs)) return '';
+        return Object.entries(toolArgs)
+            .map(([key, value]) => `${key}: ${typeof value === 'string' ? value.slice(0, 30) : JSON.stringify(value)}`)
+            .join(', ');
+    };
+
+    const formatChatTimestamp = (value?: string) => {
+        if (!value) return '';
+        const d = new Date(value);
+        const now = new Date();
+        const diffMs = now.getTime() - d.getTime();
+        const isToday = d.toDateString() === now.toDateString();
+        if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (diffMs < 7 * 86400000) {
+            return `${d.toLocaleDateString([], { weekday: 'short' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         }
-        // Old format: [File: name.pdf]\nFile location:...\nQuestion: user_msg
-        const oldFmt = !newFmt && !chanFmt && msg.content.match(/^\[File: ([^\]]+)\]/);
-        if (oldFmt) {
-            const fileName = oldFmt[1];
-            const qMatch = msg.content.match(/\nQuestion: ([\s\S]+)$/);
-            parsed = { ...msg, fileName, content: qMatch ? qMatch[1].trim() : '' };
-        }
-        // If file is an image and no imageUrl yet, build download URL for preview
-        if (parsed.fileName && !parsed.imageUrl && id) {
-            const ext = parsed.fileName.split('.').pop()?.toLowerCase() || '';
-            if (IMAGE_EXTS.includes(ext)) {
-                parsed.imageUrl = `/api/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(parsed.fileName)}&token=${token}`;
-            }
-        }
-        return parsed;
+        return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     };
 
 
@@ -1133,37 +1142,8 @@ function AgentDetailInner() {
                     if (['done', 'error', 'quota_exceeded'].includes(d.type)) setIsStreaming(false);
                 }
 
-                if (d.type === 'thinking') {
-                    setChatMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last && last.role === 'assistant' && (last as any)._streaming) {
-                            return [...prev.slice(0, -1), { ...last, thinking: (last.thinking || '') + d.content } as any];
-                        }
-                        return [...prev, { role: 'assistant', content: '', thinking: d.content, _streaming: true } as any];
-                    });
-                } else if (d.type === 'tool_call') {
-                    setChatMessages(prev => {
-                        const toolMsg: ChatMsg = { role: 'tool_call', content: '', toolName: d.name, toolArgs: d.args, toolStatus: d.status, toolResult: d.result };
-                        if (d.status === 'done') {
-                            const lastIdx = prev.length - 1;
-                            const last = prev[lastIdx];
-                            if (last && last.role === 'tool_call' && last.toolName === d.name && last.toolStatus === 'running') return [...prev.slice(0, lastIdx), toolMsg];
-                        }
-                        return [...prev, toolMsg];
-                    });
-                } else if (d.type === 'chunk') {
-                    setChatMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last && last.role === 'assistant' && (last as any)._streaming) return [...prev.slice(0, -1), { ...last, content: last.content + d.content } as any];
-                        return [...prev, { role: 'assistant', content: d.content, _streaming: true } as any];
-                    });
-                } else if (d.type === 'done') {
-                    setChatMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        const thinking = (last && last.role === 'assistant' && (last as any)._streaming) ? last.thinking : undefined;
-                        if (last && last.role === 'assistant' && (last as any)._streaming) return [...prev.slice(0, -1), { role: 'assistant', content: d.content, thinking, timestamp: new Date().toISOString() }];
-                        return [...prev, { role: d.role, content: d.content, timestamp: new Date().toISOString() }];
-                    });
+                if (['thinking', 'tool_call', 'chunk', 'done'].includes(d.type)) {
+                    setChatMessages((prev) => applyStreamEvent(prev, d, new Date().toISOString()));
                     // Silently refresh session list to update last_message_at (no loading spinner)
                     fetchMySessions(true);
                 } else if (d.type === 'error' || d.type === 'quota_exceeded') {
@@ -1184,7 +1164,10 @@ function AgentDetailInner() {
                     setChatMessages(prev => [...prev, { role: 'assistant', content: d.content }]);
                     fetchMySessions(true);
                 } else {
-                    setChatMessages(prev => [...prev, { role: d.role, content: d.content }]);
+                    setChatMessages(prev => [...prev, parseChatMsg({
+                        ...d,
+                        created_at: new Date().toISOString(),
+                    })]);
                 }
             };
         };
@@ -3071,17 +3054,41 @@ function AgentDetailInner() {
                                                 {activeSession.source_channel === 'agent' ? `🤖 Agent Conversation · ${activeSession.username || 'Agents'}` : `Read-only · ${activeSession.username || 'User'}`}
                                             </div>
                                             {historyMsgs.map((m: any, i: number) => {
+                                                if (m.role === 'event') {
+                                                    return (
+                                                        <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', paddingLeft: '36px', minWidth: 0 }}>
+                                                            <div style={{
+                                                                flex: 1,
+                                                                minWidth: 0,
+                                                                borderRadius: '8px',
+                                                                background: m.eventType === 'permission' ? 'rgba(245,158,11,0.10)' : 'var(--bg-secondary)',
+                                                                border: '1px solid var(--border-subtle)',
+                                                                padding: '10px 12px',
+                                                            }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                                    <span style={{ fontSize: '13px' }}>{m.eventType === 'permission' ? '🔒' : '🗜️'}</span>
+                                                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{m.eventTitle || (m.eventType === 'permission' ? 'Permission Gate' : 'Context Compacted')}</span>
+                                                                    {m.eventStatus && <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>{String(m.eventStatus).replace(/_/g, ' ')}</span>}
+                                                                </div>
+                                                                {m.eventToolName && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>{m.eventToolName}</div>}
+                                                                <div style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
+                                                                {m.eventApprovalId && <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>Approval ID: {m.eventApprovalId}</div>}
+                                                                {(m.timestamp || m.created_at) && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '6px', opacity: 0.6 }}>{formatChatTimestamp(m.timestamp || m.created_at)}</div>}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
                                                 if (m.role === 'tool_call') {
-                                                    const tName = m.toolName || (() => { try { return JSON.parse(m.content || '{}').name; } catch { return 'tool'; } })();
-                                                    const tArgs = m.toolArgs || (() => { try { return JSON.parse(m.content || '{}').args; } catch { return {}; } })();
-                                                    const tResult = m.toolResult ?? (() => { try { return JSON.parse(m.content || '{}').result; } catch { return ''; } })();
+                                                    const tName = m.toolName || 'tool';
+                                                    const tArgs = m.toolArgs || {};
+                                                    const tResult = m.toolResult || '';
                                                     return (
                                                         <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', paddingLeft: '36px', minWidth: 0 }}>
                                                             <details style={{ flex: 1, minWidth: 0, borderRadius: '8px', background: 'var(--accent-subtle)', border: '1px solid var(--accent-subtle)', fontSize: '12px', overflow: 'hidden' }}>
                                                                 <summary style={{ padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', userSelect: 'none', listStyle: 'none', overflow: 'hidden' }}>
                                                                     <span style={{ fontSize: '13px' }}>⚡</span>
                                                                     <span style={{ fontWeight: 600, color: 'var(--accent-text)' }}>{tName}</span>
-                                                                    {tArgs && typeof tArgs === 'object' && Object.keys(tArgs).length > 0 && <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{`(${Object.entries(tArgs).map(([k, v]) => `${k}: ${typeof v === 'string' ? v.slice(0, 30) : JSON.stringify(v)}`).join(', ')})`}</span>}
+                                                                    {hasToolArgs(tArgs) && <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{`(${formatToolArgsSummary(tArgs)})`}</span>}
                                                                 </summary>
                                                                 {tResult && <div style={{ padding: '4px 10px 8px' }}><div style={{ color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '240px', overflow: 'auto', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 6px' }}>{tResult}</div></div>}
                                                             </details>
@@ -3123,7 +3130,7 @@ function AgentDetailInner() {
                                                         <div style={{ maxWidth: '70%', padding: '8px 12px', borderRadius: '12px', background: m.role === 'assistant' ? 'var(--bg-secondary)' : 'rgba(16,185,129,0.1)', fontSize: '13px', lineHeight: '1.5', wordBreak: 'break-word' }}>
                                                             {m.sender_name && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '2px', fontWeight: 600 }}>🤖 {m.sender_name}</div>}
                                                             {(() => {
-                                                                const pm = parseChatMsg({ role: m.role as ChatMsg['role'], content: m.content || '' });
+                                                                const pm = m as ChatMsg;
                                                                 const fe = pm.fileName?.split('.').pop()?.toLowerCase() ?? '';
                                                                 const fi = fe === 'pdf' ? '📄' : (fe === 'csv' || fe === 'xlsx' || fe === 'xls') ? '📊' : (fe === 'docx' || fe === 'doc') ? '📝' : '📎';
                                                                 return (
@@ -3162,7 +3169,7 @@ function AgentDetailInner() {
                                                                     </>
                                                                 );
                                                             })()}
-                                                            {m.created_at && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px', opacity: 0.6 }}>{(() => { const d = new Date(m.created_at); const now = new Date(); const diffMs = now.getTime() - d.getTime(); const isToday = d.toDateString() === now.toDateString(); if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); if (diffMs < 7 * 86400000) return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); })()}</div>}
+                                                            {(m.timestamp || m.created_at) && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px', opacity: 0.6 }}>{formatChatTimestamp(m.timestamp || m.created_at)}</div>}
                                                         </div>
                                                     </div>
                                                 );
@@ -3184,6 +3191,30 @@ function AgentDetailInner() {
                                                 </div>
                                             )}
                                             {chatMessages.map((msg, i) => {
+                                                if (msg.role === 'event') {
+                                                    return (
+                                                        <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', paddingLeft: '36px', minWidth: 0 }}>
+                                                            <div style={{
+                                                                flex: 1,
+                                                                minWidth: 0,
+                                                                borderRadius: '8px',
+                                                                background: msg.eventType === 'permission' ? 'rgba(245,158,11,0.10)' : 'var(--bg-secondary)',
+                                                                border: '1px solid var(--border-subtle)',
+                                                                padding: '10px 12px',
+                                                            }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                                    <span style={{ fontSize: '13px' }}>{msg.eventType === 'permission' ? '🔒' : '🗜️'}</span>
+                                                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{msg.eventTitle || (msg.eventType === 'permission' ? 'Permission Gate' : 'Context Compacted')}</span>
+                                                                    {msg.eventStatus && <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>{String(msg.eventStatus).replace(/_/g, ' ')}</span>}
+                                                                </div>
+                                                                {msg.eventToolName && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>{msg.eventToolName}</div>}
+                                                                <div style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                                                                {msg.eventApprovalId && <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>Approval ID: {msg.eventApprovalId}</div>}
+                                                                {msg.timestamp && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '6px', opacity: 0.6 }}>{formatChatTimestamp(msg.timestamp)}</div>}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
                                                 if (msg.role === 'tool_call') {
                                                     return (
                                                         <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', paddingLeft: '36px', minWidth: 0 }}>
@@ -3191,7 +3222,7 @@ function AgentDetailInner() {
                                                                 <summary style={{ padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', userSelect: 'none', listStyle: 'none', overflow: 'hidden' }}>
                                                                     <span style={{ fontSize: '13px' }}>{msg.toolStatus === 'running' ? '⏳' : '⚡'}</span>
                                                                     <span style={{ fontWeight: 600, color: 'var(--accent-text)' }}>{msg.toolName}</span>
-                                                                    {msg.toolArgs && Object.keys(msg.toolArgs).length > 0 && <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{`(${Object.entries(msg.toolArgs).map(([k, v]) => `${k}: ${typeof v === 'string' ? v.slice(0, 30) : JSON.stringify(v)}`).join(', ')})`}</span>}
+                                                                    {hasToolArgs(msg.toolArgs) && <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{`(${formatToolArgsSummary(msg.toolArgs)})`}</span>}
                                                                     {msg.toolStatus === 'running' && <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', marginLeft: 'auto' }}>{t('common.loading')}</span>}
                                                                 </summary>
                                                                 {msg.toolResult && <div style={{ padding: '4px 10px 8px' }}><div style={{ color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '240px', overflow: 'auto', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 6px' }}>{msg.toolResult}</div></div>}
@@ -3276,7 +3307,7 @@ function AgentDetailInner() {
                                                                     </div>
                                                                 ) : <MarkdownRenderer content={msg.content} />
                                                             ) : msg.content ? <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div> : null}
-                                                            {msg.timestamp && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px', opacity: 0.6, textAlign: msg.role === 'user' ? 'right' : 'left' }}>{(() => { const d = new Date(msg.timestamp); const now = new Date(); const diffMs = now.getTime() - d.getTime(); const isToday = d.toDateString() === now.toDateString(); if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); if (diffMs < 7 * 86400000) return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); })()}</div>}
+                                                            {msg.timestamp && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px', opacity: 0.6, textAlign: msg.role === 'user' ? 'right' : 'left' }}>{formatChatTimestamp(msg.timestamp)}</div>}
                                                         </div>
                                                     </div>
                                                 );

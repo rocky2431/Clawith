@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../stores';
-import { agentApi } from '../services/api';
+import { adminApi, agentApi } from '../services/api';
 
 /* ────── SVG Icons ────── */
 const SidebarIcons = {
@@ -272,15 +272,13 @@ export default function Layout() {
             if (tid) localStorage.setItem('current_tenant_id', tid);
             return;
         }
-        import('../services/api').then(({ adminApi }) => {
-            adminApi.listCompanies().then((companies: any[]) => {
-                setTenants(companies.map((c: any) => ({ id: c.id, name: c.name })));
-                // If no tenant selected yet, use user's own
-                if (!localStorage.getItem('current_tenant_id') && user?.tenant_id) {
-                    localStorage.setItem('current_tenant_id', user.tenant_id);
-                }
-            }).catch(() => {});
-        });
+        adminApi.listCompanies().then((companies: any[]) => {
+            setTenants(companies.map((c: any) => ({ id: c.id, name: c.name })));
+            // If no tenant selected yet, use user's own
+            if (!localStorage.getItem('current_tenant_id') && user?.tenant_id) {
+                localStorage.setItem('current_tenant_id', user.tenant_id);
+            }
+        }).catch(() => {});
     }, [isPlatformAdmin, user?.tenant_id]);
 
     const { data: agents = [] } = useQuery({
