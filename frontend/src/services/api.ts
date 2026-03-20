@@ -506,3 +506,30 @@ export const capabilityApi = {
 export const onboardingApi = {
     status: () => request<{ items: any[]; completed: number; total: number }>('/enterprise/onboarding-status'),
 };
+
+// ─── Pack Catalog & Capability Summary ───────────────
+export const packApi = {
+    catalog: () => request<any[]>('/packs'),
+
+    agentPacks: (agentId: string) =>
+        request<{ kernel_tools: string[]; available_packs: any[]; channel_backed_packs: any[]; skill_declared_packs: any[] }>(
+            `/agents/${agentId}/packs`,
+        ),
+
+    capabilitySummary: (agentId: string) =>
+        request<{
+            kernel_tools: string[];
+            available_packs: any[];
+            channel_backed_packs: any[];
+            capability_policies: any[];
+            pending_approvals: number;
+        }>(`/agents/${agentId}/capability-summary`),
+
+    sessionRuntime: (sessionId: string) =>
+        request<{
+            activated_packs: string[];
+            used_tools: string[];
+            blocked_capabilities: any[];
+            compaction_count: number;
+        }>(`/chat/sessions/${sessionId}/runtime-summary`),
+};

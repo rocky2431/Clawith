@@ -10,7 +10,8 @@ import ChannelConfig from '../components/ChannelConfig';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import PromptModal from '../components/PromptModal';
 import { applyStreamEvent, hydrateTimelineMessage, type TimelineMessage } from '../lib/chatParts.ts';
-import { activityApi, agentApi, channelApi, enterpriseApi, fileApi, scheduleApi, skillApi, taskApi, triggerApi, uploadFileWithProgress } from '../services/api';
+import { activityApi, agentApi, capabilityApi, channelApi, enterpriseApi, fileApi, packApi, scheduleApi, skillApi, taskApi, triggerApi, uploadFileWithProgress } from '../services/api';
+import CapabilityPackCard from '../components/CapabilityPackCard';
 import { useAuthStore } from '../stores';
 
 const TABS = ['status', 'aware', 'mind', 'tools', 'skills', 'relationships', 'workspace', 'chat', 'activityLog', 'approvals', 'settings'] as const;
@@ -464,6 +465,130 @@ function ToolsManager({ agentId, canManage = false }: { agentId: string; canMana
                 </div>
             )}
         </>
+    );
+}
+
+function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: boolean }) {
+    const { t } = useTranslation();
+    const [sessionExpanded, setSessionExpanded] = useState(false);
+
+    const { data: capSummary, isLoading } = useQuery({
+        queryKey: ['capability-summary', agentId],
+        queryFn: () => packApi.capabilitySummary(agentId),
+        enabled: !!agentId,
+    });
+
+    if (isLoading || !capSummary) {
+        return <div style={{ color: 'var(--text-tertiary)', padding: '20px' }}>{t('common.loading')}</div>;
+    }
+
+    const { kernel_tools, available_packs, channel_backed_packs, capability_policies } = capSummary;
+    const allPacks = [...available_packs, ...channel_backed_packs];
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Section 1: Kernel Tools */}
+            <div>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.kernel')}</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
+                    {t('enterprise.packs.kernelDesc')}
+                </p>
+                <div
+                    style={{
+                        background: 'var(--bg-tertiary)',
+                        borderRadius: '8px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '6px',
+                    }}
+                >
+                    {kernel_tools.map((name: string) => (
+                        <span
+                            key={name}
+                            style={{
+                                fontSize: '11px',
+                                padding: '3px 10px',
+                                borderRadius: '4px',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-secondary)',
+                                fontFamily: 'var(--font-mono)',
+                                border: '1px solid var(--border-subtle)',
+                            }}
+                        >
+                            {name}
+                        </span>
+                    ))}
+                    {kernel_tools.length === 0 && (
+                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('common.noData')}</span>
+                    )}
+                </div>
+            </div>
+
+            {/* Section 2: Capability Packs */}
+            <div>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.capabilityPacks')}</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
+                    {t('enterprise.packs.description')}
+                </p>
+                {allPacks.length > 0 ? (
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                            gap: '10px',
+                        }}
+                    >
+                        {allPacks.map((pack: any) => (
+                            <CapabilityPackCard
+                                key={pack.name}
+                                pack={pack}
+                                policies={capability_policies}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="card" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                        {t('common.noData')}
+                    </div>
+                )}
+            </div>
+
+            {/* Section 3: Installed MCP / External (existing ToolsManager) */}
+            <div>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.installed')}</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
+                    {t('agent.toolMgmt.description')}
+                </p>
+                <ToolsManager agentId={agentId} canManage={canManage} />
+            </div>
+
+            {/* Section 4: Session Activations (collapsible) */}
+            <details
+                className="card"
+                open={sessionExpanded}
+                onToggle={(e) => setSessionExpanded((e.target as HTMLDetailsElement).open)}
+            >
+                <summary
+                    style={{
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        listStyle: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        userSelect: 'none',
+                    }}
+                >
+                    <span style={{ transition: 'transform 0.15s', display: 'inline-block', transform: sessionExpanded ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>&#x25B6;</span>
+                    {t('enterprise.packs.sessionActivations')}
+                </summary>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
+                    {t('enterprise.packs.description')}
+                </p>
+            </details>
+        </div>
     );
 }
 
@@ -2647,16 +2772,10 @@ function AgentDetailInner() {
                     })()
                 }
 
-                {/* ── Tools Tab ── */}
+                {/* ── Tools Tab (Capabilities View) ── */}
                 {
                     activeTab === 'tools' && (
-                        <div>
-                            <div style={{ marginBottom: '16px' }}>
-                                <h3 style={{ marginBottom: '4px' }}>{t('agent.toolMgmt.title')}</h3>
-                                <p style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>{t('agent.toolMgmt.description')}</p>
-                            </div>
-                            <ToolsManager agentId={id!} canManage={canManage} />
-                        </div>
+                        <CapabilitiesView agentId={id!} canManage={canManage} />
                     )
                 }
 
@@ -3978,55 +4097,362 @@ function AgentDetailInner() {
                                     );
                                 })()}
 
-                                {/* Autonomy Policy — native agents only */}
-                                {(agent as any)?.agent_type !== 'openclaw' && <div className="card" style={{ marginBottom: '12px' }}>
-                                    <h4 style={{ marginBottom: '4px' }}>{t('agent.settings.autonomy.title')}</h4>
-                                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
-                                        {t('agent.settings.autonomy.description')}
-                                    </p>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                        {[
-                                            { key: 'read_files', label: t('agent.settings.autonomy.readFiles'), desc: t('agent.settings.autonomy.readFilesDesc') },
-                                            { key: 'write_workspace_files', label: t('agent.settings.autonomy.writeFiles'), desc: t('agent.settings.autonomy.writeFilesDesc') },
-                                            { key: 'delete_files', label: t('agent.settings.autonomy.deleteFiles'), desc: t('agent.settings.autonomy.deleteFilesDesc') },
-                                            { key: 'send_feishu_message', label: t('agent.settings.autonomy.sendFeishu'), desc: t('agent.settings.autonomy.sendFeishuDesc') },
-                                            { key: 'web_search', label: t('agent.settings.autonomy.webSearch'), desc: t('agent.settings.autonomy.webSearchDesc') },
-                                            { key: 'manage_tasks', label: t('agent.settings.autonomy.manageTasks'), desc: t('agent.settings.autonomy.manageTasksDesc') },
-                                        ].map((action) => {
-                                            const currentLevel = (agent?.autonomy_policy as any)?.[action.key] || 'L1';
-                                            return (
-                                                <div key={action.key} style={{
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                    padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: '8px',
-                                                    border: '1px solid var(--border-subtle)',
-                                                }}>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontWeight: 500, fontSize: '13px' }}>{action.label}</div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{action.desc}</div>
-                                                    </div>
-                                                    <select
-                                                        className="input"
-                                                        value={currentLevel}
-                                                        onChange={async (e) => {
-                                                            const newPolicy = { ...(agent?.autonomy_policy as any || {}), [action.key]: e.target.value };
-                                                            await agentApi.update(id!, { autonomy_policy: newPolicy } as any);
-                                                            queryClient.invalidateQueries({ queryKey: ['agent', id] });
-                                                        }}
-                                                        style={{
-                                                            width: '140px', fontSize: '12px',
-                                                            color: currentLevel === 'L1' ? 'var(--success)' : currentLevel === 'L2' ? 'var(--warning)' : 'var(--error)',
-                                                            fontWeight: 600,
-                                                        }}
-                                                    >
-                                                        <option value="L1">{t('agent.settings.autonomy.l1Auto')}</option>
-                                                        <option value="L2">{t('agent.settings.autonomy.l2Notify')}</option>
-                                                        <option value="L3">{t('agent.settings.autonomy.l3Approve')}</option>
-                                                    </select>
+                                {/* Capability Policy — native agents only */}
+                                {(agent as any)?.agent_type !== 'openclaw' && (() => {
+                                    const [capDefs, setCapDefs] = useState<any[]>([]);
+                                    const [capPolicies, setCapPolicies] = useState<any[]>([]);
+                                    const [capLoading, setCapLoading] = useState(true);
+                                    const [capSaving, setCapSaving] = useState<string | null>(null);
+                                    const [addingCapability, setAddingCapability] = useState(false);
+                                    const [selectedNewCap, setSelectedNewCap] = useState('');
+
+                                    useEffect(() => {
+                                        let cancelled = false;
+                                        const load = async () => {
+                                            setCapLoading(true);
+                                            try {
+                                                const [defs, policies] = await Promise.all([
+                                                    capabilityApi.definitions(),
+                                                    capabilityApi.list(id!),
+                                                ]);
+                                                if (!cancelled) {
+                                                    setCapDefs(defs || []);
+                                                    setCapPolicies(policies || []);
+                                                }
+                                            } catch {
+                                                if (!cancelled) {
+                                                    setCapDefs([]);
+                                                    setCapPolicies([]);
+                                                }
+                                            } finally {
+                                                if (!cancelled) setCapLoading(false);
+                                            }
+                                        };
+                                        load();
+                                        return () => { cancelled = true; };
+                                    }, [id]);
+
+                                    const agentPolicies = capPolicies.filter((p: any) => p.agent_id === id);
+                                    const configuredCaps = new Set(agentPolicies.map((p: any) => p.capability));
+                                    const unconfiguredDefs = capDefs.filter((d: any) => !configuredCaps.has(d.capability));
+
+                                    const handleUpsert = async (capability: string, allowed: boolean, requiresApproval: boolean) => {
+                                        setCapSaving(capability);
+                                        try {
+                                            const result = await capabilityApi.upsert({
+                                                capability,
+                                                agent_id: id!,
+                                                allowed,
+                                                requires_approval: requiresApproval,
+                                            });
+                                            setCapPolicies(prev => {
+                                                const idx = prev.findIndex((p: any) => p.capability === capability && p.agent_id === id);
+                                                if (idx >= 0) {
+                                                    const next = [...prev];
+                                                    next[idx] = result;
+                                                    return next;
+                                                }
+                                                return [...prev, result];
+                                            });
+                                        } finally {
+                                            setCapSaving(null);
+                                        }
+                                    };
+
+                                    const handleDelete = async (policy: any) => {
+                                        setCapSaving(policy.capability);
+                                        try {
+                                            await capabilityApi.delete(policy.id);
+                                            setCapPolicies(prev => prev.filter((p: any) => p.id !== policy.id));
+                                        } finally {
+                                            setCapSaving(null);
+                                        }
+                                    };
+
+                                    const handleAddNew = async () => {
+                                        if (!selectedNewCap) return;
+                                        await handleUpsert(selectedNewCap, true, false);
+                                        setSelectedNewCap('');
+                                        setAddingCapability(false);
+                                    };
+
+                                    const getToolsForCapability = (cap: string) => {
+                                        const def = capDefs.find((d: any) => d.capability === cap);
+                                        return def?.tools || [];
+                                    };
+
+                                    return (
+                                        <div className="card" style={{ marginBottom: '12px' }}>
+                                            <h4 style={{ marginBottom: '4px' }}>{t('agent.settings.capabilityPolicy.title')}</h4>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
+                                                {t('agent.settings.capabilityPolicy.description')}
+                                            </p>
+
+                                            {capLoading ? (
+                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '12px 0' }}>{t('common.loading')}</div>
+                                            ) : capDefs.length === 0 ? (
+                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '12px 0' }}>
+                                                    {t('agent.settings.capabilityPolicy.noDefinitions')}
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>}
+                                            ) : (
+                                                <>
+                                                    {agentPolicies.length === 0 && (
+                                                        <div style={{
+                                                            fontSize: '12px', color: 'var(--text-tertiary)',
+                                                            padding: '12px 14px', background: 'var(--bg-elevated)',
+                                                            borderRadius: '8px', border: '1px solid var(--border-subtle)',
+                                                            marginBottom: '10px',
+                                                        }}>
+                                                            {t('agent.settings.capabilityPolicy.noPolicies')}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Policy table */}
+                                                    {agentPolicies.length > 0 && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                                                            {/* Header row */}
+                                                            <div style={{
+                                                                display: 'grid',
+                                                                gridTemplateColumns: '1fr 1fr 100px 120px 60px',
+                                                                gap: '8px',
+                                                                padding: '6px 14px',
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                                color: 'var(--text-tertiary)',
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.5px',
+                                                            }}>
+                                                                <span>{t('agent.settings.capabilityPolicy.capability')}</span>
+                                                                <span>{t('agent.settings.capabilityPolicy.tools')}</span>
+                                                                <span>{t('agent.settings.capabilityPolicy.status')}</span>
+                                                                <span>{t('agent.settings.capabilityPolicy.approval')}</span>
+                                                                <span>{t('agent.settings.capabilityPolicy.actions')}</span>
+                                                            </div>
+
+                                                            {/* Data rows */}
+                                                            {agentPolicies.map((policy: any) => {
+                                                                const tools = getToolsForCapability(policy.capability);
+                                                                const isSaving = capSaving === policy.capability;
+                                                                return (
+                                                                    <div key={policy.id} style={{
+                                                                        display: 'grid',
+                                                                        gridTemplateColumns: '1fr 1fr 100px 120px 60px',
+                                                                        gap: '8px',
+                                                                        alignItems: 'center',
+                                                                        padding: '10px 14px',
+                                                                        background: 'var(--bg-elevated)',
+                                                                        borderRadius: '8px',
+                                                                        border: '1px solid var(--border-subtle)',
+                                                                        opacity: isSaving ? 0.6 : 1,
+                                                                        transition: 'opacity 0.15s',
+                                                                    }}>
+                                                                        {/* Capability name */}
+                                                                        <div style={{
+                                                                            fontWeight: 500, fontSize: '13px',
+                                                                            fontFamily: 'var(--font-mono)',
+                                                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                                        }}>
+                                                                            {policy.capability}
+                                                                        </div>
+
+                                                                        {/* Related tools */}
+                                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                                            {tools.slice(0, 3).map((tool: string) => (
+                                                                                <span key={tool} style={{
+                                                                                    fontSize: '10px', padding: '2px 6px',
+                                                                                    borderRadius: '4px',
+                                                                                    background: 'var(--bg-secondary)',
+                                                                                    color: 'var(--text-tertiary)',
+                                                                                    fontFamily: 'var(--font-mono)',
+                                                                                    border: '1px solid var(--border-subtle)',
+                                                                                }}>
+                                                                                    {tool}
+                                                                                </span>
+                                                                            ))}
+                                                                            {tools.length > 3 && (
+                                                                                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                                                                                    +{tools.length - 3}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Allowed/Denied toggle */}
+                                                                        <button
+                                                                            disabled={isSaving}
+                                                                            onClick={() => handleUpsert(policy.capability, !policy.allowed, policy.requires_approval)}
+                                                                            style={{
+                                                                                padding: '4px 10px', borderRadius: '6px',
+                                                                                fontSize: '11px', fontWeight: 600,
+                                                                                border: '1px solid',
+                                                                                cursor: isSaving ? 'default' : 'pointer',
+                                                                                background: policy.allowed ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                                                                color: policy.allowed ? 'var(--success)' : 'var(--error)',
+                                                                                borderColor: policy.allowed ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
+                                                                            }}
+                                                                        >
+                                                                            {policy.allowed
+                                                                                ? t('agent.settings.capabilityPolicy.allowed')
+                                                                                : t('agent.settings.capabilityPolicy.denied')}
+                                                                        </button>
+
+                                                                        {/* Requires approval checkbox */}
+                                                                        <label style={{
+                                                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                                                            fontSize: '11px', color: 'var(--text-secondary)',
+                                                                            cursor: isSaving ? 'default' : 'pointer',
+                                                                        }}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={policy.requires_approval}
+                                                                                disabled={isSaving}
+                                                                                onChange={(e) => handleUpsert(policy.capability, policy.allowed, e.target.checked)}
+                                                                                style={{ accentColor: 'var(--accent-primary)' }}
+                                                                            />
+                                                                            {t('agent.settings.capabilityPolicy.requiresApproval')}
+                                                                        </label>
+
+                                                                        {/* Delete button */}
+                                                                        <button
+                                                                            disabled={isSaving}
+                                                                            onClick={() => handleDelete(policy)}
+                                                                            title={t('agent.settings.capabilityPolicy.delete')}
+                                                                            style={{
+                                                                                padding: '4px 8px', borderRadius: '6px',
+                                                                                fontSize: '11px', cursor: isSaving ? 'default' : 'pointer',
+                                                                                background: 'none', border: '1px solid var(--border-subtle)',
+                                                                                color: 'var(--text-tertiary)',
+                                                                            }}
+                                                                        >
+                                                                            {t('agent.settings.capabilityPolicy.delete')}
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Add Policy */}
+                                                    {addingCapability ? (
+                                                        <div style={{
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                            padding: '10px 14px', background: 'var(--bg-elevated)',
+                                                            borderRadius: '8px', border: '1px solid var(--accent-primary)',
+                                                        }}>
+                                                            <select
+                                                                className="input"
+                                                                value={selectedNewCap}
+                                                                onChange={(e) => setSelectedNewCap(e.target.value)}
+                                                                style={{ flex: 1, fontSize: '12px' }}
+                                                            >
+                                                                <option value="">{t('agent.settings.capabilityPolicy.selectCapability')}</option>
+                                                                {unconfiguredDefs.map((def: any) => (
+                                                                    <option key={def.capability} value={def.capability}>
+                                                                        {def.capability}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            <button
+                                                                className="btn btn-primary"
+                                                                disabled={!selectedNewCap || capSaving !== null}
+                                                                onClick={handleAddNew}
+                                                                style={{ padding: '5px 14px', fontSize: '12px' }}
+                                                            >
+                                                                {t('agent.settings.capabilityPolicy.addPolicy')}
+                                                            </button>
+                                                            <button
+                                                                style={{
+                                                                    background: 'none', border: 'none',
+                                                                    cursor: 'pointer', color: 'var(--text-tertiary)',
+                                                                    fontSize: '16px', lineHeight: 1,
+                                                                }}
+                                                                onClick={() => { setAddingCapability(false); setSelectedNewCap(''); }}
+                                                            >
+                                                                x
+                                                            </button>
+                                                        </div>
+                                                    ) : unconfiguredDefs.length > 0 && (
+                                                        <button
+                                                            onClick={() => setAddingCapability(true)}
+                                                            style={{
+                                                                padding: '8px 14px', borderRadius: '8px',
+                                                                border: '1px dashed var(--border-subtle)',
+                                                                background: 'none', cursor: 'pointer',
+                                                                color: 'var(--accent-primary)', fontSize: '12px',
+                                                                fontWeight: 500, width: '100%',
+                                                                transition: 'border-color 0.15s',
+                                                            }}
+                                                        >
+                                                            + {t('agent.settings.capabilityPolicy.addPolicy')}
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Legacy Autonomy Policy — native agents only, collapsed and de-emphasized */}
+                                {(agent as any)?.agent_type !== 'openclaw' && (
+                                    <details className="card" style={{
+                                        marginBottom: '12px',
+                                        opacity: 0.7,
+                                        borderColor: 'var(--border-subtle)',
+                                    }}>
+                                        <summary style={{
+                                            cursor: 'pointer', fontWeight: 500, fontSize: '13px',
+                                            listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px',
+                                            color: 'var(--text-secondary)',
+                                        }}>
+                                            <span style={{ fontSize: '10px', transition: 'transform 0.15s', display: 'inline-block' }}>&#x25B6;</span>
+                                            {t('agent.settings.autonomy.legacyTitle')}
+                                        </summary>
+                                        <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', margin: '8px 0 12px', fontStyle: 'italic' }}>
+                                            {t('agent.settings.autonomy.legacyInfo')}
+                                        </p>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            {[
+                                                { key: 'read_files', label: t('agent.settings.autonomy.readFiles'), desc: t('agent.settings.autonomy.readFilesDesc') },
+                                                { key: 'write_workspace_files', label: t('agent.settings.autonomy.writeFiles'), desc: t('agent.settings.autonomy.writeFilesDesc') },
+                                                { key: 'delete_files', label: t('agent.settings.autonomy.deleteFiles'), desc: t('agent.settings.autonomy.deleteFilesDesc') },
+                                                { key: 'send_feishu_message', label: t('agent.settings.autonomy.sendFeishu'), desc: t('agent.settings.autonomy.sendFeishuDesc') },
+                                                { key: 'web_search', label: t('agent.settings.autonomy.webSearch'), desc: t('agent.settings.autonomy.webSearchDesc') },
+                                                { key: 'manage_tasks', label: t('agent.settings.autonomy.manageTasks'), desc: t('agent.settings.autonomy.manageTasksDesc') },
+                                            ].map((action) => {
+                                                const currentLevel = (agent?.autonomy_policy as any)?.[action.key] || 'L1';
+                                                return (
+                                                    <div key={action.key} style={{
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                        padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: '8px',
+                                                        border: '1px solid var(--border-subtle)',
+                                                    }}>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{action.label}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{action.desc}</div>
+                                                        </div>
+                                                        <select
+                                                            className="input"
+                                                            value={currentLevel}
+                                                            onChange={async (e) => {
+                                                                const newPolicy = { ...(agent?.autonomy_policy as any || {}), [action.key]: e.target.value };
+                                                                await agentApi.update(id!, { autonomy_policy: newPolicy } as any);
+                                                                queryClient.invalidateQueries({ queryKey: ['agent', id] });
+                                                            }}
+                                                            style={{
+                                                                width: '140px', fontSize: '12px',
+                                                                color: currentLevel === 'L1' ? 'var(--success)' : currentLevel === 'L2' ? 'var(--warning)' : 'var(--error)',
+                                                                fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            <option value="L1">{t('agent.settings.autonomy.l1Auto')}</option>
+                                                            <option value="L2">{t('agent.settings.autonomy.l2Notify')}</option>
+                                                            <option value="L3">{t('agent.settings.autonomy.l3Approve')}</option>
+                                                        </select>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </details>
+                                )}
 
                                 {/* Permission Management */}
                                 {(() => {

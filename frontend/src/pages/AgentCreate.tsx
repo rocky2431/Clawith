@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agentApi, channelApi, enterpriseApi, skillApi, toolApi } from '../services/api';
+import { agentApi, channelApi, enterpriseApi, skillApi } from '../services/api';
 import ChannelConfig from '../components/ChannelConfig';
 
-const STEPS = ['basicInfo', 'personality', 'skills', 'permissions', 'channel'] as const;
+const STEPS = ['identity', 'capabilities', 'risk', 'channel', 'review'] as const;
 const OPENCLAW_STEPS = ['basicInfo', 'permissions'] as const;
 
 export default function AgentCreate() {
@@ -35,7 +35,6 @@ export default function AgentCreate() {
         max_tokens_per_day: '',
         max_tokens_per_month: '',
         skill_ids: [] as string[],
-        tool_ids: [] as string[],
         agent_class: 'internal_tenant',
         security_zone: 'standard',
     });
@@ -59,12 +58,6 @@ export default function AgentCreate() {
         queryFn: skillApi.list,
     });
 
-    // Fetch platform tools for step 3
-    const { data: platformTools = [] } = useQuery({
-        queryKey: ['platform-tools'],
-        queryFn: toolApi.list,
-    });
-
     // Auto-select default skills
     useEffect(() => {
         if (globalSkills.length > 0) {
@@ -78,31 +71,9 @@ export default function AgentCreate() {
         }
     }, [globalSkills]);
 
-    // Auto-select default tools
-    useEffect(() => {
-        if (platformTools.length > 0) {
-            const defaultIds = platformTools.filter((t: any) => t.is_default).map((t: any) => t.id);
-            if (defaultIds.length > 0) {
-                setForm(prev => ({
-                    ...prev,
-                    tool_ids: Array.from(new Set([...prev.tool_ids, ...defaultIds]))
-                }));
-            }
-        }
-    }, [platformTools]);
-
     const createMutation = useMutation({
         mutationFn: async (data: any) => {
-            const agent = await agentApi.create(data);
-            // Sync tool selections after agent creation
-            if (data._tool_ids?.length > 0 && agent.id) {
-                const updates = platformTools.map((t: any) => ({
-                    tool_id: t.id,
-                    enabled: data._tool_ids.includes(t.id),
-                }));
-                await toolApi.updateAgentTools(agent.id, updates).catch(() => {});
-            }
-            return agent;
+            return await agentApi.create(data);
         },
         onSuccess: async (agent) => {
             queryClient.invalidateQueries({ queryKey: ['agents'] });
@@ -245,7 +216,6 @@ export default function AgentCreate() {
             skill_ids: agentType === 'native' ? form.skill_ids : [],
             permission_access_level: form.permission_access_level,
             tenant_id: currentTenant || undefined,
-            _tool_ids: agentType === 'native' ? form.tool_ids : [],
         });
     };
 
@@ -536,10 +506,10 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
             )}
 
             <div className="card" style={{ maxWidth: '640px' }}>
-                {/* Step 1: Basic Info + Model */}
+                {/* Step 1: Identity — merged basicInfo + personality + model */}
                 {step === 0 && (
                     <div>
-                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step1.title')}</h3>
+                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step1New.title')}</h3>
 
                         {/* Template selector */}
                         {templates.length > 0 && (
@@ -617,6 +587,20 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                             {fieldErrors.role_description && <div style={{ color: 'var(--error)', fontSize: '12px', marginTop: '4px' }}>{fieldErrors.role_description}</div>}
                         </div>
 
+                        {/* Personality & Boundaries — merged from old step 2 */}
+                        <div className="form-group">
+                            <label className="form-label">{t('agent.fields.personality')}</label>
+                            <textarea className="form-textarea" rows={3} value={form.personality}
+                                onChange={(e) => setForm({ ...form, personality: e.target.value })}
+                                placeholder={t("wizard.step2.personalityPlaceholder")} />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">{t('agent.fields.boundaries')}</label>
+                            <textarea className="form-textarea" rows={3} value={form.boundaries}
+                                onChange={(e) => setForm({ ...form, boundaries: e.target.value })}
+                                placeholder={t("wizard.step2.boundariesPlaceholder")} />
+                        </div>
+
                         {/* Model Selection */}
                         <div className="form-group">
                             <label className="form-label">{t('wizard.step1.primaryModel')} *</label>
@@ -666,32 +650,23 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                     </div>
                 )}
 
-                {/* Step 2: Personality */}
+                {/* Step 2: Starter Capabilities — skills only + kernel info */}
                 {step === 1 && (
                     <div>
-                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step2.title')}</h3>
-                        <div className="form-group">
-                            <label className="form-label">{t('agent.fields.personality')}</label>
-                            <textarea className="form-textarea" rows={4} value={form.personality}
-                                onChange={(e) => setForm({ ...form, personality: e.target.value })}
-                                placeholder={t("wizard.step2.personalityPlaceholder")} />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">{t('agent.fields.boundaries')}</label>
-                            <textarea className="form-textarea" rows={4} value={form.boundaries}
-                                onChange={(e) => setForm({ ...form, boundaries: e.target.value })}
-                                placeholder={t("wizard.step2.boundariesPlaceholder")} />
-                        </div>
-                    </div>
-                )}
-
-                {/* Step 3: Skills */}
-                {step === 2 && (
-                    <div>
-                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step3.title')}</h3>
+                        <h3 style={{ marginBottom: '6px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step2New.title')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                            {t('wizard.step3.description')}
+                            {t('wizard.step2New.description')}
                         </p>
+
+                        {/* Kernel info box */}
+                        <div style={{
+                            padding: '12px 14px', marginBottom: '20px', borderRadius: '8px',
+                            background: 'var(--bg-secondary)', border: '1px solid var(--border-default)',
+                            fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6,
+                        }}>
+                            {t('wizard.step2New.kernelInfo')}
+                        </div>
+
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {globalSkills.map((skill: any) => {
                                 const isDefault = skill.is_default;
@@ -732,101 +707,75 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                 </div>
                             )}
                         </div>
-
-                        {/* Tools Section */}
-                        <h3 style={{ marginTop: '28px', marginBottom: '12px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step3.toolsTitle', 'Tools')}</h3>
-                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                            {t('wizard.step3.toolsDescription', 'Select tools the agent can use. Default tools are pre-enabled.')}
-                        </p>
-                        {(() => {
-                            const categories = [...new Set(platformTools.map((t: any) => t.category))];
-                            return categories.length > 0 ? categories.map((cat: string) => (
-                                <div key={cat} style={{ marginBottom: '16px' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'capitalize' }}>
-                                        {t(`toolCategory.${cat}`, cat)}
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        {platformTools.filter((t: any) => t.category === cat).map((tool: any) => {
-                                            const isDefault = tool.is_default;
-                                            const isChecked = form.tool_ids.includes(tool.id);
-                                            return (
-                                                <label key={tool.id} style={{
-                                                    display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px',
-                                                    background: isChecked ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                                    border: `1px solid ${isChecked ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                                    borderRadius: '8px', cursor: isDefault ? 'default' : 'pointer',
-                                                    opacity: isDefault ? 0.85 : 1,
-                                                }}>
-                                                    <input type="checkbox"
-                                                        checked={isChecked}
-                                                        disabled={isDefault}
-                                                        onChange={(e) => {
-                                                            if (isDefault) return;
-                                                            if (e.target.checked) {
-                                                                setForm({ ...form, tool_ids: [...form.tool_ids, tool.id] });
-                                                            } else {
-                                                                setForm({ ...form, tool_ids: form.tool_ids.filter((id: string) => id !== tool.id) });
-                                                            }
-                                                        }}
-                                                    />
-                                                    <div style={{ fontSize: '16px' }}>{tool.icon}</div>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{t(`tools.names.${tool.name}`, tool.display_name) as string}</span>
-                                                            {isDefault && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>{t('common.default', 'Default')}</span>}
-                                                        </div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t(`tools.descriptions.${tool.name}`, tool.description) as string}</div>
-                                                    </div>
-                                                </label>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )) : (
-                                <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                                    {t('wizard.step3.noTools', 'No tools available.')}
-                                </div>
-                            );
-                        })()}
                     </div>
                 )}
 
-                {/* Step 4: Permissions */}
-                {step === 3 && (
+                {/* Step 3: Risk & Approval */}
+                {step === 2 && (
                     <div>
-                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step4.title')}</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-                            {[
-                                { value: 'company', label: t('wizard.step4.companyWide'), desc: t('wizard.step4.companyWideDesc') },
-                                { value: 'user', label: t('wizard.step4.selfOnly'), desc: t('wizard.step4.selfOnlyDesc') },
-                            ].map((scope) => (
-                                <label key={scope.value} style={{
-                                    display: 'flex', alignItems: 'center', gap: '12px', padding: '14px',
-                                    background: form.permission_scope_type === scope.value ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                    border: `1px solid ${form.permission_scope_type === scope.value ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                    borderRadius: '8px', cursor: 'pointer',
-                                }}>
-                                    <input type="radio" name="scope" checked={form.permission_scope_type === scope.value}
-                                        onChange={() => setForm({ ...form, permission_scope_type: scope.value })} />
+                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step3New.title')}</h3>
 
-                                    <div>
-                                        <div style={{ fontWeight: 500, fontSize: '13px' }}>{scope.label}</div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{scope.desc}</div>
-                                    </div>
-                                </label>
-                            ))}
+                        {/* Security Zone */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
+                                {t('agent.zone.title', 'Security Zone')}
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {(['standard', 'restricted', 'public'] as const).map((zone) => (
+                                    <label key={zone} style={{
+                                        flex: 1, display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
+                                        background: form.security_zone === zone ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                                        border: `1px solid ${form.security_zone === zone ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                        borderRadius: '8px', cursor: 'pointer',
+                                    }}>
+                                        <input type="radio" name="security_zone" checked={form.security_zone === zone}
+                                            onChange={() => setForm({ ...form, security_zone: zone })} style={{ marginTop: '2px' }} />
+                                        <div>
+                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{t(`agent.zone.${zone}`, zone)}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t(`agent.zone.${zone}_desc`, '')}</div>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Access Scope */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
+                                {t('wizard.step4.title')}
+                            </label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {[
+                                    { value: 'company', label: t('wizard.step4.companyWide'), desc: t('wizard.step4.companyWideDesc') },
+                                    { value: 'user', label: t('wizard.step4.selfOnly'), desc: t('wizard.step4.selfOnlyDesc') },
+                                ].map((scope) => (
+                                    <label key={scope.value} style={{
+                                        display: 'flex', alignItems: 'center', gap: '12px', padding: '14px',
+                                        background: form.permission_scope_type === scope.value ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                                        border: `1px solid ${form.permission_scope_type === scope.value ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                        borderRadius: '8px', cursor: 'pointer',
+                                    }}>
+                                        <input type="radio" name="scope" checked={form.permission_scope_type === scope.value}
+                                            onChange={() => setForm({ ...form, permission_scope_type: scope.value })} />
+                                        <div>
+                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{scope.label}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{scope.desc}</div>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Access Level — only for company scope */}
                         {form.permission_scope_type === 'company' && (
-                            <div>
+                            <div style={{ marginBottom: '20px' }}>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
                                     {t('wizard.step4.accessLevel', 'Default Access Level')}
                                 </label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     {[
-                                        { value: 'use', icon: '👁️', label: t('wizard.step4.useLevel', 'Use'), desc: t('wizard.step4.useDesc', 'Can use Task, Chat, Tools, Skills, Workspace') },
-                                        { value: 'manage', icon: '⚙️', label: t('wizard.step4.manageLevel', 'Manage'), desc: t('wizard.step4.manageDesc', 'Full access including Settings, Mind, Relationships') },
+                                        { value: 'use', label: t('wizard.step4.useLevel', 'Use'), desc: t('wizard.step4.useDesc', 'Can use Task, Chat, Tools, Skills, Workspace') },
+                                        { value: 'manage', label: t('wizard.step4.manageLevel', 'Manage'), desc: t('wizard.step4.manageDesc', 'Full access including Settings, Mind, Relationships') },
                                     ].map((lvl) => (
                                         <label key={lvl.value} style={{
                                             flex: 1, display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
@@ -837,7 +786,7 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                             <input type="radio" name="access_level" checked={form.permission_access_level === lvl.value}
                                                 onChange={() => setForm({ ...form, permission_access_level: lvl.value })} style={{ marginTop: '2px' }} />
                                             <div>
-                                                <div style={{ fontWeight: 500, fontSize: '13px' }}>{lvl.icon} {lvl.label}</div>
+                                                <div style={{ fontWeight: 500, fontSize: '13px' }}>{lvl.label}</div>
                                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{lvl.desc}</div>
                                             </div>
                                         </label>
@@ -846,58 +795,19 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                             </div>
                         )}
 
-                        {/* Agent Classification */}
-                        <div style={{ marginTop: '20px' }}>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
-                                {t('agent.class.title', 'Agent Type')}
-                            </label>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {(['internal_tenant', 'external_gateway', 'external_api'] as const).map((cls) => (
-                                    <label key={cls} style={{
-                                        flex: 1, minWidth: '140px', display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
-                                        background: (form as any).agent_class === cls ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                        border: `1px solid ${(form as any).agent_class === cls ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                        borderRadius: '8px', cursor: 'pointer',
-                                    }}>
-                                        <input type="radio" name="agent_class" checked={(form as any).agent_class === cls}
-                                            onChange={() => setForm({ ...form, agent_class: cls } as any)} style={{ marginTop: '2px' }} />
-                                        <div>
-                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{t(`agent.class.${cls}`, cls)}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t(`agent.class.${cls}_desc`, '')}</div>
-                                        </div>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Security Zone */}
-                        <div style={{ marginTop: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>
-                                {t('agent.zone.title', 'Security Zone')}
-                            </label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                {(['standard', 'restricted', 'public'] as const).map((zone) => (
-                                    <label key={zone} style={{
-                                        flex: 1, display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
-                                        background: (form as any).security_zone === zone ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                        border: `1px solid ${(form as any).security_zone === zone ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                        borderRadius: '8px', cursor: 'pointer',
-                                    }}>
-                                        <input type="radio" name="security_zone" checked={(form as any).security_zone === zone}
-                                            onChange={() => setForm({ ...form, security_zone: zone } as any)} style={{ marginTop: '2px' }} />
-                                        <div>
-                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{t(`agent.zone.${zone}`, zone)}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t(`agent.zone.${zone}_desc`, '')}</div>
-                                        </div>
-                                    </label>
-                                ))}
-                            </div>
+                        {/* Capability hint */}
+                        <div style={{
+                            padding: '12px 14px', borderRadius: '8px',
+                            background: 'var(--bg-secondary)', border: '1px solid var(--border-default)',
+                            fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6,
+                        }}>
+                            {t('wizard.step3New.capabilityHint')}
                         </div>
                     </div>
                 )}
 
-                {/* Step 5: Channel */}
-                {step === 4 && (
+                {/* Step 4: Channel — kept as-is */}
+                {step === 3 && (
                     <div>
                         <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step5.title', 'Channel Configuration')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
@@ -914,6 +824,37 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                     </div>
                 )}
 
+                {/* Step 5: Review */}
+                {step === 4 && (
+                    <div>
+                        <h3 style={{ marginBottom: '6px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step5.title')}</h3>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                            {t('wizard.step5.summary')}
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {[
+                                { label: t('wizard.step5.agentName'), value: form.name || t('wizard.summary.unnamed') },
+                                { label: t('wizard.step5.agentRole'), value: form.role_description || '-' },
+                                { label: t('wizard.step5.agentModel'), value: selectedModel?.label || t('wizard.step5.noneSelected') },
+                                { label: t('wizard.step5.agentSkills'), value: form.skill_ids.length > 0 ? `${form.skill_ids.length}` : t('wizard.step5.noneSelected') },
+                                { label: t('wizard.step5.agentSecurityZone'), value: t(`agent.zone.${form.security_zone}`, form.security_zone) },
+                                { label: t('wizard.step5.agentAccessScope'), value: form.permission_scope_type === 'company' ? t('wizard.step4.companyWide') : t('wizard.step4.selfOnly') },
+                                ...(form.permission_scope_type === 'company' ? [{ label: t('wizard.step5.agentAccessLevel'), value: form.permission_access_level === 'manage' ? t('wizard.step4.manageLevel', 'Manage') : t('wizard.step4.useLevel', 'Use') }] : []),
+                                { label: t('wizard.step5.channelsConfigured'), value: Object.keys(channelValues).length > 0 ? t('wizard.step5.yes') : t('wizard.step5.no') },
+                            ].map((row, i) => (
+                                <div key={i} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: '8px',
+                                    border: '1px solid var(--border-default)',
+                                }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{row.label}</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{row.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
             </div>
 

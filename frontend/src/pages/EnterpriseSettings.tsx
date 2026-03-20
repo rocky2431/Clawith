@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { enterpriseApi, skillApi, featureFlagApi, auditApi, capabilityApi, onboardingApi, oidcApi } from '../services/api';
+import { enterpriseApi, skillApi, featureFlagApi, auditApi, capabilityApi, onboardingApi, oidcApi, packApi } from '../services/api';
 import PromptModal from '../components/PromptModal';
 import FileBrowser from '../components/FileBrowser';
 import type { FileBrowserApi } from '../components/FileBrowser';
@@ -1318,7 +1318,7 @@ function MemoryTab({ models }: { models: LLMModel[] }) {
 export default function EnterpriseSettings() {
     const { t } = useTranslation();
     const qc = useQueryClient();
-    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory' | 'sso' | 'capabilities'>('info');
+    const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'packs' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory' | 'sso' | 'capabilities'>('info');
 
     // OpenViking status for KB tab
     const { data: vikingStatus } = useQuery({
@@ -1633,6 +1633,14 @@ export default function EnterpriseSettings() {
         setSsoSaving(false);
     };
 
+    // ─── Packs
+    const { data: packCatalog = [], isLoading: packsLoading } = useQuery({
+        queryKey: ['pack-catalog'],
+        queryFn: () => packApi.catalog(),
+        enabled: activeTab === 'packs',
+    });
+    const [expandedPacks, setExpandedPacks] = useState<Record<string, boolean>>({});
+
     // ─── Capabilities
     const { data: capDefinitions = [] } = useQuery({
         queryKey: ['cap-definitions'],
@@ -1689,7 +1697,7 @@ export default function EnterpriseSettings() {
                 </div>
 
                 <div className="tabs">
-                    {(['info', 'llm', 'tools', 'skills', 'memory', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'sso', 'capabilities', 'flags'] as const).map(tab => (
+                    {(['info', 'llm', 'tools', 'packs', 'skills', 'memory', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit', 'sso', 'capabilities', 'flags'] as const).map(tab => (
                         <div key={tab} className={`tab ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>
                             {tab === 'quotas' ? t('enterprise.tabs.quotas', 'Quotas') : tab === 'users' ? t('enterprise.tabs.users', 'Users') : tab === 'invites' ? t('enterprise.tabs.invites', 'Invitations') : t(`enterprise.tabs.${tab}`, tab)}
                         </div>
@@ -2778,6 +2786,91 @@ export default function EnterpriseSettings() {
                                 {allTools.length === 0 && <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>{t('enterprise.tools.emptyState')}</div>}
                             </div>
                         </>}
+                    </div>
+                )}
+
+                {/* ── Packs Tab ── */}
+                {activeTab === 'packs' && (
+                    <div>
+                        <h3 style={{ marginBottom: '4px' }}>{t('enterprise.packs.title')}</h3>
+                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
+                            {t('enterprise.packs.description')}
+                        </p>
+                        {packsLoading ? (
+                            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>Loading...</div>
+                        ) : packCatalog.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>{t('common.noData')}</div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '12px' }}>
+                                {packCatalog.map((pack: any) => {
+                                    const isExpanded = expandedPacks[pack.name] ?? false;
+                                    const sourceBadgeColors: Record<string, { bg: string; color: string }> = {
+                                        system: { bg: 'rgba(59,130,246,0.15)', color: '#60a5fa' },
+                                        channel: { bg: 'rgba(34,197,94,0.15)', color: '#4ade80' },
+                                        mcp: { bg: 'rgba(168,85,247,0.15)', color: '#c084fc' },
+                                        skill: { bg: 'rgba(251,146,60,0.15)', color: '#fb923c' },
+                                    };
+                                    const badge = sourceBadgeColors[pack.source] || sourceBadgeColors.system;
+                                    const sourceLabel = String(t(`enterprise.packs.source${pack.source.charAt(0).toUpperCase() + pack.source.slice(1)}`, pack.source));
+                                    return (
+                                        <div key={pack.name} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>{pack.name}</span>
+                                                <span style={{
+                                                    fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '10px',
+                                                    background: badge.bg, color: badge.color,
+                                                }}>{sourceLabel}</span>
+                                            </div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>{pack.summary}</p>
+                                            <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                                <span>{t('enterprise.packs.activation')}: <strong style={{ color: 'var(--text-secondary)' }}>{pack.activation_mode}</strong></span>
+                                            </div>
+                                            {pack.requires_channel && (
+                                                <div style={{ fontSize: '11px', color: '#60a5fa', background: 'rgba(59,130,246,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
+                                                    {t('enterprise.packs.requiresChannel')}
+                                                </div>
+                                            )}
+                                            {pack.capabilities && pack.capabilities.length > 0 ? (
+                                                <div style={{ fontSize: '11px', color: '#c084fc', background: 'rgba(168,85,247,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
+                                                    {t('enterprise.packs.restricted')}: {pack.capabilities.join(', ')}
+                                                </div>
+                                            ) : (
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                                    {t('enterprise.packs.noCapabilityRestriction')}
+                                                </div>
+                                            )}
+                                            {pack.tools && pack.tools.length > 0 && (
+                                                <div>
+                                                    <button
+                                                        onClick={() => setExpandedPacks(prev => ({ ...prev, [pack.name]: !isExpanded }))}
+                                                        style={{
+                                                            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                                                            fontSize: '12px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '4px',
+                                                        }}
+                                                    >
+                                                        <span style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>&#9654;</span>
+                                                        {t('enterprise.packs.tools')} ({pack.tools.length})
+                                                    </button>
+                                                    {isExpanded && (
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                                                            {pack.tools.map((tool: string) => (
+                                                                <span key={tool} style={{
+                                                                    fontSize: '11px', padding: '2px 8px', borderRadius: '4px',
+                                                                    background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                                                                    border: '1px solid var(--border-subtle)',
+                                                                }}>
+                                                                    {tool}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 )}
 

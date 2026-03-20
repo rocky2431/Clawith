@@ -337,7 +337,28 @@
         "manageTasksDesc": "Create, update, or delete tasks",
         "l1Auto": "L1 Auto Execute",
         "l2Notify": "L2 Notify",
-        "l3Approve": "L3 Approval Required"
+        "l3Approve": "L3 Approval Required",
+        "legacyTitle": "Advanced: Legacy Autonomy Levels",
+        "legacyInfo": "These settings are being superseded by Capability Policies above."
+      },
+      "capabilityPolicy": {
+        "title": "Capability Policy",
+        "description": "Configure which high-risk capabilities this agent can use. Unconfigured capabilities inherit the tenant default.",
+        "capability": "Capability",
+        "tools": "Related Tools",
+        "status": "Status",
+        "approval": "Approval Required",
+        "actions": "Actions",
+        "allowed": "Allowed",
+        "denied": "Denied",
+        "requiresApproval": "Requires Approval",
+        "addPolicy": "Add Policy",
+        "selectCapability": "Select a capability...",
+        "noDefinitions": "No capability definitions available.",
+        "noPolicies": "No agent-specific policies configured. Tenant defaults apply.",
+        "delete": "Delete",
+        "saving": "Saving...",
+        "tenantDefault": "tenant default"
       },
       "channel": {
         "title": "Channel Config",
@@ -465,7 +486,11 @@
       "personality": "Personality",
       "skills": "Skills",
       "permissions": "Permissions",
-      "channel": "Channel"
+      "channel": "Channel",
+      "identity": "Identity",
+      "capabilities": "Capabilities",
+      "risk": "Risk & Approval",
+      "review": "Review"
     },
     "next": "Next",
     "prev": "Previous",
@@ -535,6 +560,33 @@
       "encryptKeyPlaceholder": "For event encryption verification",
       "skipHint": "You can still chat with the agent via web after skipping"
     },
+    "step1New": {
+      "title": "Identity & Model"
+    },
+    "step2New": {
+      "title": "Starter Capabilities",
+      "description": "Select skills for your agent.",
+      "kernelInfo": "Agents come with kernel tools (file I/O, triggers, search) by default. Capability packs (Feishu, email, web search) activate on demand via skills and channel config."
+    },
+    "step3New": {
+      "title": "Risk & Approval",
+      "capabilityHint": "Capability policies can be configured after creation in Agent Settings."
+    },
+    "step5": {
+      "title": "Review & Create",
+      "summary": "Review your agent configuration before creating.",
+      "agentName": "Name",
+      "agentRole": "Role",
+      "agentModel": "Model",
+      "agentSkills": "Skills",
+      "agentSecurityZone": "Security Zone",
+      "agentAccessScope": "Access Scope",
+      "agentAccessLevel": "Access Level",
+      "channelsConfigured": "Channels configured",
+      "noneSelected": "None",
+      "yes": "Yes",
+      "no": "No"
+    },
     "summary": {
       "unnamed": "Unnamed",
       "model": "Model",
@@ -598,7 +650,8 @@
       "memory": "Memory",
       "sso": "SSO",
       "capabilities": "Capabilities",
-      "onboarding": "Onboarding"
+      "onboarding": "Onboarding",
+      "packs": "Packs"
     },
     "memory": {
       "title": "Memory & Summarization",
@@ -786,6 +839,25 @@
       "description": "Complete the following steps to enable all enterprise features.",
       "completed": "{{completed}}/{{total}} completed",
       "allDone": "All done"
+    },
+    "packs": {
+      "title": "Pack Catalog",
+      "description": "Agents activate capability packs on demand via skills or channel configuration. Inactive packs do not appear in the agent's tool list.",
+      "kernel": "Kernel Tools",
+      "kernelDesc": "Always-available base primitives, no configuration needed.",
+      "capabilityPacks": "Capability Packs",
+      "installed": "Installed Extensions",
+      "sessionActivations": "Session Activations",
+      "source": "Source",
+      "sourceSystem": "System",
+      "sourceChannel": "Channel",
+      "sourceMcp": "MCP",
+      "sourceSkill": "Skill",
+      "activation": "Activation",
+      "tools": "Exposed Tools",
+      "requiresChannel": "Requires channel config",
+      "noCapabilityRestriction": "Unrestricted",
+      "restricted": "Governed"
     },
     "notificationBar": {
       "title": "Notification Bar",

@@ -82,26 +82,32 @@ async def run_tool_governance(
                 f"🔒 Tool '{context.tool_name}' is blocked — this agent is in the 'public' "
                 "security zone and can only use safe read-only tools."
             )
-            await _emit_event(event_callback, {
-                "type": "permission",
-                "tool_name": context.tool_name,
-                "status": "blocked",
-                "message": message,
-                "security_zone": zone,
-            })
+            await _emit_event(
+                event_callback,
+                {
+                    "type": "permission",
+                    "tool_name": context.tool_name,
+                    "status": "blocked",
+                    "message": message,
+                    "security_zone": zone,
+                },
+            )
             return message
         if zone == "restricted" and context.tool_name in SENSITIVE_TOOLS:
             message = (
                 f"🔒 Tool '{context.tool_name}' requires approval — this agent is in the "
                 "'restricted' security zone. Please ask an admin to approve this action."
             )
-            await _emit_event(event_callback, {
-                "type": "permission",
-                "tool_name": context.tool_name,
-                "status": "approval_required",
-                "message": message,
-                "security_zone": zone,
-            })
+            await _emit_event(
+                event_callback,
+                {
+                    "type": "permission",
+                    "tool_name": context.tool_name,
+                    "status": "approval_required",
+                    "message": message,
+                    "security_zone": zone,
+                },
+            )
             return message
     except Exception as exc:
         logger.warning(
@@ -112,23 +118,23 @@ async def run_tool_governance(
         )
         if context.tool_name in SENSITIVE_TOOLS:
             message = (
-                f"🔒 Tool '{context.tool_name}' blocked — security zone check failed. "
-                "Please retry or contact admin."
+                f"🔒 Tool '{context.tool_name}' blocked — security zone check failed. Please retry or contact admin."
             )
-            await _emit_event(event_callback, {
-                "type": "permission",
-                "tool_name": context.tool_name,
-                "status": "blocked",
-                "message": message,
-            })
+            await _emit_event(
+                event_callback,
+                {
+                    "type": "permission",
+                    "tool_name": context.tool_name,
+                    "status": "blocked",
+                    "message": message,
+                },
+            )
             return message
 
     if context.tenant_id:
         try:
             tenant_uuid = uuid.UUID(context.tenant_id)
-            cap_result = await _maybe_await(
-                deps.check_capability(tenant_uuid, context.agent_id, context.tool_name)
-            )
+            cap_result = await _maybe_await(deps.check_capability(tenant_uuid, context.agent_id, context.tool_name))
             if getattr(cap_result, "denied", False):
                 message = f"🚫 Capability denied: {cap_result.reason}"
                 await _maybe_await(
@@ -144,13 +150,16 @@ async def run_tool_governance(
                         details={"tool": context.tool_name, "capability": cap_result.capability},
                     )
                 )
-                await _emit_event(event_callback, {
-                    "type": "permission",
-                    "tool_name": context.tool_name,
-                    "status": "capability_denied",
-                    "message": message,
-                    "capability": cap_result.capability,
-                })
+                await _emit_event(
+                    event_callback,
+                    {
+                        "type": "permission",
+                        "tool_name": context.tool_name,
+                        "status": "capability_denied",
+                        "message": message,
+                        "capability": cap_result.capability,
+                    },
+                )
                 return message
             if getattr(cap_result, "escalate_to_l3", False):
                 await _maybe_await(
@@ -166,8 +175,14 @@ async def run_tool_governance(
                         details={"tool": context.tool_name, "capability": cap_result.capability},
                     )
                 )
+            _escalated_capability = (
+                getattr(cap_result, "capability", None) if getattr(cap_result, "escalate_to_l3", False) else None
+            )
         except Exception as exc:
+            _escalated_capability = None
             logger.warning("Capability gate check failed for tool %s: %s", context.tool_name, exc)
+    else:
+        _escalated_capability = None
 
     action_type = TOOL_AUTONOMY_MAP.get(context.tool_name)
     if action_type:
@@ -176,7 +191,10 @@ async def run_tool_governance(
                 "agent_id": context.agent_id,
                 "user_id": context.user_id,
                 "tool_name": context.tool_name,
-                "arguments": context.arguments,
+                "arguments": {
+                    **context.arguments,
+                    **({"_capability": _escalated_capability} if _escalated_capability else {}),
+                },
             }
             if "action_type" in inspect.signature(deps.check_autonomy).parameters:
                 autonomy_kwargs["action_type"] = action_type
@@ -188,36 +206,43 @@ async def run_tool_governance(
                         "⏳ This action requires approval. An approval request has been sent. "
                         f"Please wait for approval before retrying. (Approval ID: {result_check.get('approval_id', 'N/A')})"
                     )
-                    await _emit_event(event_callback, {
-                        "type": "permission",
-                        "tool_name": context.tool_name,
-                        "status": "approval_required",
-                        "message": message,
-                        "approval_id": result_check.get("approval_id"),
-                        "autonomy_level": level,
-                    })
+                    await _emit_event(
+                        event_callback,
+                        {
+                            "type": "permission",
+                            "tool_name": context.tool_name,
+                            "status": "approval_required",
+                            "message": message,
+                            "approval_id": result_check.get("approval_id"),
+                            "autonomy_level": level,
+                            **({"capability": _escalated_capability} if _escalated_capability else {}),
+                        },
+                    )
                     return message
                 message = f"❌ Action denied: {result_check.get('message', 'unknown reason')}"
-                await _emit_event(event_callback, {
+                await _emit_event(
+                    event_callback,
+                    {
+                        "type": "permission",
+                        "tool_name": context.tool_name,
+                        "status": "blocked",
+                        "message": message,
+                        "autonomy_level": level,
+                    },
+                )
+                return message
+        except Exception as exc:
+            logger.error("[Autonomy] Check failed — blocking as safety measure: %s", exc)
+            message = f"⚠️ Autonomy check failed ({exc}). Operation blocked for safety. Please retry or contact admin."
+            await _emit_event(
+                event_callback,
+                {
                     "type": "permission",
                     "tool_name": context.tool_name,
                     "status": "blocked",
                     "message": message,
-                    "autonomy_level": level,
-                })
-                return message
-        except Exception as exc:
-            logger.error("[Autonomy] Check failed — blocking as safety measure: %s", exc)
-            message = (
-                f"⚠️ Autonomy check failed ({exc}). Operation blocked for safety. "
-                "Please retry or contact admin."
+                },
             )
-            await _emit_event(event_callback, {
-                "type": "permission",
-                "tool_name": context.tool_name,
-                "status": "blocked",
-                "message": message,
-            })
             return message
 
     return None
