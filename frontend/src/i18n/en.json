@@ -510,7 +510,8 @@
   "wizard": {
     "steps": {
       "identity": "Identity",
-      "abilities": "Abilities"
+      "abilities": "Abilities",
+      "boundaries": "Permissions & Channels"
     },
     "next": "Next",
     "prev": "Previous",
@@ -549,6 +550,25 @@
       "recommendedBadge": "Recommended",
       "noSkills": "No skills available. Add skills in Company Settings first.",
       "approvalHint": "Some actions may need your approval before executing."
+    },
+    "boundaries": {
+      "accessScope": "Who can use this",
+      "everyone": "Everyone",
+      "everyoneDesc": "All users in the organization",
+      "selfOnly": "Only me",
+      "selfOnlyDesc": "Only the creator can use this agent",
+      "autonomy": "Action autonomy",
+      "autonomyDesc": "Decide how independently this agent can act.",
+      "readFiles": "Read files",
+      "writeFiles": "Write files",
+      "deleteFiles": "Delete files",
+      "sendMessage": "Send messages",
+      "webSearch": "Web search",
+      "executeCode": "Execute code",
+      "l1": "Auto-execute",
+      "l2": "Execute & notify",
+      "l3": "Requires approval",
+      "connectChannel": "Connect a channel (optional)"
     },
     "success": {
       "title": "{{name}} is ready!",
