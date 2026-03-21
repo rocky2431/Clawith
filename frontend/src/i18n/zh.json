@@ -252,6 +252,39 @@
       "saving": "保存中...",
       "cancelButton": "取消"
     },
+    "skillTabs": {
+      "skills": "技能",
+      "mcp": "导入工具",
+      "memory": "记忆",
+      "knowledge": "知识库",
+      "foundation": "基础能力"
+    },
+    "foundation": {
+      "title": "基础能力",
+      "description": "每个数字员工都自带以下基础能力，无需配置。",
+      "fileIO": "文件读写",
+      "fileIODesc": "读取、编辑工作区文件",
+      "search": "文件搜索",
+      "searchDesc": "按名称或内容搜索文件",
+      "skills": "技能加载",
+      "skillsDesc": "按需加载技能获取更多能力",
+      "triggers": "定时任务",
+      "triggersDesc": "设置触发器自动执行",
+      "messaging": "消息发送",
+      "messagingDesc": "向同事或其他员工发消息",
+      "toolDiscovery": "工具发现",
+      "toolDiscoveryDesc": "搜索和导入新的外部工具",
+      "alwaysAvailable": "这些能力始终可用，不需要安装。"
+    },
+    "overview": {
+      "personality": "人格定义",
+      "workingOn": "当前关注",
+      "editFile": "编辑",
+      "saveFile": "保存",
+      "cancelEdit": "取消",
+      "saving": "保存中...",
+      "emptyFocus": "暂无当前关注。Agent 会在工作中自动更新。"
+    },
     "memory": {
       "title": "记忆文件",
       "indexFile": "索引",

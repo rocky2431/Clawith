@@ -995,6 +995,7 @@ function AgentDetailInner() {
     const [showCompletedFocus, setShowCompletedFocus] = useState(false);
     const [showAllTriggers, setShowAllTriggers] = useState(false);
     const [showAllReflections, setShowAllReflections] = useState(false);
+    const [skillSubTab, setSkillSubTab] = useState<'skills' | 'mcp' | 'memory' | 'knowledge' | 'foundation'>('skills');
     const [reflectionPage, setReflectionPage] = useState(0);
     const REFLECTIONS_PAGE_SIZE = 10;
     const SECTION_PAGE_SIZE = 5;
@@ -1002,7 +1003,7 @@ function AgentDetailInner() {
     const { data: soulContent } = useQuery({
         queryKey: ['file', id, 'soul.md'],
         queryFn: () => fileApi.read(id!, 'soul.md'),
-        enabled: !!id && activeTab === 'skills',
+        enabled: !!id && (activeTab === 'skills' || activeTab === 'overview'),
     });
 
     const { data: memoryFiles = [] } = useQuery({
@@ -1701,6 +1702,39 @@ function AgentDetailInner() {
         },
     });
 
+    // ─── Focus editor (overview tab) ─────────────────────
+    const [focusEditing, setFocusEditing] = useState(false);
+    const [focusDraft, setFocusDraft] = useState('');
+
+    const saveFocus = useMutation({
+        mutationFn: () => fileApi.write(id!, 'focus.md', focusDraft),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['file', id, 'focus.md'] });
+            setFocusEditing(false);
+        },
+    });
+
+    // ─── Memory facts (skills/memory sub-tab) ────────────
+    const { data: memoryJsonContent } = useQuery({
+        queryKey: ['file', id, 'memory/memory.json'],
+        queryFn: () => fileApi.read(id!, 'memory/memory.json').catch(() => null),
+        enabled: !!id && activeTab === 'skills' && skillSubTab === 'memory',
+    });
+    const { data: memoryMdContent } = useQuery({
+        queryKey: ['file', id, 'memory/memory.md'],
+        queryFn: () => fileApi.read(id!, 'memory/memory.md').catch(() => null),
+        enabled: !!id && activeTab === 'skills' && skillSubTab === 'memory',
+    });
+    const [memoryMdEditing, setMemoryMdEditing] = useState(false);
+    const [memoryMdDraft, setMemoryMdDraft] = useState('');
+    const saveMemoryMd = useMutation({
+        mutationFn: () => fileApi.write(id!, 'memory/memory.md', memoryMdDraft),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['file', id, 'memory/memory.md'] });
+            setMemoryMdEditing(false);
+        },
+    });
+
 
     const CopyBtn = ({ url }: { url: string }) => (
         <button title="Copy" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginLeft: '6px', padding: '1px 4px', cursor: 'pointer', borderRadius: '3px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-secondary)', verticalAlign: 'middle', lineHeight: 1 }}
@@ -1963,251 +1997,132 @@ function AgentDetailInner() {
                     ))}
                 </div>
 
-                {/* ── Overview Tab (merged: status + aware + relationships) ── */}
+                {/* ── Overview Tab (redesigned: identity + tokens + soul.md + focus.md) ── */}
                 {activeTab === 'overview' && (() => {
-                    // Format date helper
                     const formatDate = (d: string) => {
                         try { return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return d; }
                     };
-                    // Get model label
-                    const primaryModel = llmModels.find((m: any) => m.id === agent.primary_model_id);
-                    const modelLabel = primaryModel ? (primaryModel.label || primaryModel.model) : '—';
-                    const modelProvider = primaryModel ? primaryModel.provider : '—';
-
-                    // ── Focus parsing (from aware tab) ──
-                    const raw = focusFile?.content || '';
-                    const lines = raw.split('\n');
-                    const focusItems: { id: string; name: string; description: string; done: boolean; inProgress: boolean }[] = [];
-                    let currentItem: any = null;
-                    for (const line of lines) {
-                        const match = line.match(/^\s*-\s*\[([ x/])\]\s*(.+)/i);
-                        if (match) {
-                            if (currentItem) focusItems.push(currentItem);
-                            const marker = match[1];
-                            const fullText = match[2].trim();
-                            const colonIdx = fullText.indexOf(':');
-                            const itemName = colonIdx > 0 ? fullText.substring(0, colonIdx).trim() : fullText;
-                            const itemDesc = colonIdx > 0 ? fullText.substring(colonIdx + 1).trim() : '';
-                            currentItem = {
-                                id: itemName,
-                                name: itemName,
-                                description: itemDesc,
-                                done: marker.toLowerCase() === 'x',
-                                inProgress: marker === '/',
-                            };
-                        } else if (currentItem && line.trim() && /^\s{2,}/.test(line)) {
-                            currentItem.description = currentItem.description
-                                ? currentItem.description + ' ' + line.trim()
-                                : line.trim();
-                        }
-                    }
-                    if (currentItem) focusItems.push(currentItem);
-                    const activeFocusItems = focusItems.filter(f => !f.done);
 
                     return (
                         <div>
-                            {/* Section 1: Status cards row */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
-                                <div className="card">
-                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>{t('agent.tabs.status', 'Status')}</div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {/* Identity card — compact one-row */}
+                            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px', marginBottom: '16px' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', flexShrink: 0 }}>
+                                    {(Array.from(agent.name || 'A')[0] as string || 'A').toUpperCase()}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontWeight: 600, fontSize: '15px' }}>{agent.name}</span>
+                                        {agent.role_description && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{agent.role_description}</span>}
                                         <span className={`status-dot ${statusKey}`} />
-                                        <span style={{ fontSize: '16px', fontWeight: 500 }}>{t(`agent.status.${statusKey}`)}</span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                        <span>{agent.created_at ? formatDate(agent.created_at) : ''}</span>
+                                        {(agent as any).creator_username && <span>@{(agent as any).creator_username}</span>}
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Token usage — 3 small cards */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
                                 <div className="card">
                                     <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>{t('agent.settings.today')} Token</div>
                                     <div style={{ fontSize: '22px', fontWeight: 600 }}>{formatTokens(agent.tokens_used_today)}</div>
-                                    {agent.max_tokens_per_day && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t('agent.settings.noLimit')} {formatTokens(agent.max_tokens_per_day)}</div>}
+                                    {agent.max_tokens_per_day && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>/ {formatTokens(agent.max_tokens_per_day)}</div>}
                                 </div>
                                 <div className="card">
                                     <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>{t('agent.settings.month')} Token</div>
                                     <div style={{ fontSize: '22px', fontWeight: 600 }}>{formatTokens(agent.tokens_used_month)}</div>
-                                    {agent.max_tokens_per_month && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{t('agent.settings.noLimit')} {formatTokens(agent.max_tokens_per_month)}</div>}
-                                </div>
-                                {/* Native agent metrics */}
-                                {(agent as any)?.agent_type !== 'openclaw' && (<>
-                                <div className="card">
-                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>LLM Calls Today</div>
-                                    <div style={{ fontSize: '22px', fontWeight: 600 }}>{((agent as any).llm_calls_today || 0).toLocaleString()}</div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Max: {((agent as any).max_llm_calls_per_day || 100).toLocaleString()}</div>
+                                    {agent.max_tokens_per_month && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>/ {formatTokens(agent.max_tokens_per_month)}</div>}
                                 </div>
                                 <div className="card">
                                     <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>Total Token</div>
                                     <div style={{ fontSize: '22px', fontWeight: 600 }}>{formatTokens((agent as any).tokens_used_total || 0)}</div>
                                 </div>
-                                {metrics && (
-                                    <>
-                                        <div className="card">
-                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>{t('agent.tasks.done')}</div>
-                                            <div style={{ fontSize: '22px', fontWeight: 600 }}>{metrics.tasks?.done || 0}/{metrics.tasks?.total || 0}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}> {metrics.tasks?.completion_rate || 0}%</div>
-                                        </div>
-                                        <div className="card">
-                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>Pending</div>
-                                            <div style={{ fontSize: '22px', fontWeight: 600, color: metrics.approvals?.pending > 0 ? 'var(--warning)' : 'inherit' }}>{metrics.approvals?.pending || 0}</div>
-                                        </div>
-                                        <div className="card" style={{ position: 'relative' }}>
-                                            <div className="metric-tooltip-trigger" style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px', cursor: 'help', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                                {t('agentDetail.actions24h')}
-                                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6.5" /><path d="M8 7v4M8 5.5v0" /></svg>
-                                                <span className="metric-tooltip">{t('agentDetail.actions24hTooltip')}</span>
-                                            </div>
-                                            <div style={{ fontSize: '22px', fontWeight: 600 }}>{metrics.activity?.actions_last_24h || 0}</div>
-                                        </div>
-                                    </>
-                                )}
-                                </>)}
-                                {/* OpenClaw-specific metrics */}
-                                {(agent as any)?.agent_type === 'openclaw' && (
-                                    <div className="card">
-                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
-                                            {t('agentDetail.lastSeen')}
-                                        </div>
-                                        <div style={{ fontSize: '16px', fontWeight: 500 }}>
-                                            {(agent as any).openclaw_last_seen
-                                                ? new Date((agent as any).openclaw_last_seen).toLocaleString()
-                                                : (t('agentDetail.notConnected'))}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
 
-                            {/* Agent Profile & Model Info */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                                <div className="card">
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>📋 Agent Profile</h3>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', gap: '12px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}>{t('agent.fields.role')}</span>
-                                            <span title={agent.role_description || ''} style={{ textAlign: 'right', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{agent.role_description || '—'}</span>
+                            {/* soul.md editor */}
+                            <div className="card" style={{ marginBottom: '20px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <h3 style={{ fontSize: '14px', fontWeight: 600 }}>{t('agent.overview.personality')}</h3>
+                                    {canManage && !soulEditing && (
+                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setSoulDraft(soulContent?.content || ''); setSoulEditing(true); }}>
+                                            {t('agent.overview.editFile')}
+                                        </button>
+                                    )}
+                                    {soulEditing && (
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setSoulEditing(false)}>
+                                                {t('agent.overview.cancelEdit')}
+                                            </button>
+                                            <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saveSoul.isPending} onClick={() => saveSoul.mutate()}>
+                                                {saveSoul.isPending ? t('agent.overview.saving') : t('agent.overview.saveFile')}
+                                            </button>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>Created</span>
-                                            <span>{agent.created_at ? formatDate(agent.created_at) : '—'}</span>
-                                        </div>
-                                        {(agent as any).creator_username && (
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                                <span style={{ color: 'var(--text-tertiary)' }}>{t('agent.fields.createdBy', 'Created by')}</span>
-                                                <span style={{ color: 'var(--text-secondary)' }}>@{(agent as any).creator_username}</span>
-                                            </div>
-                                        )}
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>Last Active</span>
-                                            <span>{agent.last_active_at ? formatDate(agent.last_active_at) : '—'}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>🌐 Timezone</span>
-                                            <span>{(agent as any).effective_timezone || agent.timezone || 'UTC'}</span>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
-                                {(agent as any)?.agent_type !== 'openclaw' ? (
-                                <div className="card">
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>Model Config</h3>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>Model</span>
-                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>{modelLabel}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>Provider</span>
-                                            <span style={{ textTransform: 'capitalize' }}>{modelProvider}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>Context Rounds</span>
-                                            <span>{(agent as any).context_window_size || 100}</span>
-                                        </div>
-                                    </div>
-                                </div>
+                                {soulEditing ? (
+                                    <textarea
+                                        className="input"
+                                        value={soulDraft}
+                                        onChange={e => setSoulDraft(e.target.value)}
+                                        rows={12}
+                                        style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }}
+                                    />
                                 ) : (
-                                <div className="card">
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>
-                                        {t('agentDetail.openclawConnection')}
-                                    </h3>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>{t('agentDetail.type')}</span>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span style={{
-                                                    fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
-                                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontWeight: 600,
-                                                }}>OpenClaw</span>
-                                                Lab
-                                            </span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>{t('agentDetail.lastSeen')}</span>
-                                            <span>{(agent as any).openclaw_last_seen
-                                                ? new Date((agent as any).openclaw_last_seen).toLocaleString()
-                                                : (t('agentDetail.never'))}
-                                            </span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>{t('agentDetail.model')}</span>
-                                            <span style={{ color: 'var(--text-secondary)' }}>{t('agentDetail.managedByOpenclaw')}</span>
-                                        </div>
+                                    <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+                                        {soulContent?.content ? (
+                                            <MarkdownRenderer content={soulContent.content} />
+                                        ) : (
+                                            <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>soul.md</span>
+                                        )}
                                     </div>
-                                </div>
                                 )}
                             </div>
 
-                            {/* Section 2: Working On (focus.md) */}
-                            {(agent as any)?.agent_type !== 'openclaw' && activeFocusItems.length > 0 && (
-                                <div className="card" style={{ marginBottom: '24px' }}>
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>{t('agent.aware.focus')}</h3>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        {activeFocusItems.slice(0, 5).map((item) => (
-                                            <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                                                <div style={{
-                                                    width: '8px', height: '8px', borderRadius: '50%', marginTop: '5px', flexShrink: 0,
-                                                    background: item.inProgress ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                                                }} />
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{item.description || item.name}</div>
-                                                    {item.description && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'monospace', marginTop: '2px' }}>{item.name}</div>}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                            {/* focus.md editor */}
+                            <div className="card" style={{ marginBottom: '20px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <h3 style={{ fontSize: '14px', fontWeight: 600 }}>{t('agent.overview.workingOn')}</h3>
+                                    {canManage && !focusEditing && (
+                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setFocusDraft(focusFile?.content || ''); setFocusEditing(true); }}>
+                                            {t('agent.overview.editFile')}
+                                        </button>
+                                    )}
+                                    {focusEditing && (
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setFocusEditing(false)}>
+                                                {t('agent.overview.cancelEdit')}
+                                            </button>
+                                            <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saveFocus.isPending} onClick={() => saveFocus.mutate()}>
+                                                {saveFocus.isPending ? t('agent.overview.saving') : t('agent.overview.saveFile')}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-
-                            {/* Section 3: Recent Activity (last 5) */}
-                            {activityLogs && activityLogs.length > 0 && (
-                                <div className="card" style={{ marginBottom: '24px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                        <h3 style={{ fontSize: '14px', fontWeight: 600 }}>{t('agent.activityLog.title')}</h3>
-                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setActiveTab('activity')}>View All →</button>
+                                {focusEditing ? (
+                                    <textarea
+                                        className="input"
+                                        value={focusDraft}
+                                        onChange={e => setFocusDraft(e.target.value)}
+                                        rows={8}
+                                        style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }}
+                                    />
+                                ) : (
+                                    <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+                                        {focusFile?.content ? (
+                                            <MarkdownRenderer content={focusFile.content} />
+                                        ) : (
+                                            <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{t('agent.overview.emptyFocus')}</span>
+                                        )}
                                     </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        {activityLogs.slice(0, 5).map((log: any, i: number) => (
-                                            <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', padding: '6px 0', borderBottom: i < 4 ? '1px solid var(--border-subtle)' : 'none' }}>
-                                                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', minWidth: '60px', flexShrink: 0 }}>
-                                                    {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{log.summary || log.action_type}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Section 4: Team Connections (collapsible) */}
-                            <details className="card">
-                                <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>&#x25B6;</span>
-                                    {t('agent.tabs.relationships', 'Team Connections')}
-                                </summary>
-                                <div style={{ marginTop: '12px' }}>
-                                    <RelationshipEditor agentId={id!} readOnly={(agent as any)?.access_level === 'use'} />
-                                </div>
-                            </details>
+                                )}
+                            </div>
                         </div>
                     );
                 })()}
 
-                {/* ── Skills Tab (merged: skills + capabilities + mind + workspace) ── */}
+                {/* ── Skills Tab (5 sub-tabs: skills / mcp / memory / knowledge / foundation) ── */}
                 {
                     activeTab === 'skills' && (() => {
                         const adapter: FileBrowserApi = {
@@ -2220,323 +2135,266 @@ function AgentDetailInner() {
                         };
                         const installedSkillFolders = skillFiles.filter((item: any) => item.is_dir);
                         const installedSkillFiles = skillFiles.filter((item: any) => !item.is_dir);
+
+                        const FOUNDATION_ITEMS = [
+                            { icon: '\uD83D\uDCC2', label: t('agent.foundation.fileIO'), desc: t('agent.foundation.fileIODesc') },
+                            { icon: '\uD83D\uDD0D', label: t('agent.foundation.search'), desc: t('agent.foundation.searchDesc') },
+                            { icon: '\uD83D\uDCDA', label: t('agent.foundation.skills'), desc: t('agent.foundation.skillsDesc') },
+                            { icon: '\u23F0', label: t('agent.foundation.triggers'), desc: t('agent.foundation.triggersDesc') },
+                            { icon: '\uD83D\uDCAC', label: t('agent.foundation.messaging'), desc: t('agent.foundation.messagingDesc') },
+                            { icon: '\uD83D\uDD27', label: t('agent.foundation.toolDiscovery'), desc: t('agent.foundation.toolDiscoveryDesc') },
+                        ];
+
+                        // Parse memory.json for facts
+                        let memoryFacts: string[] = [];
+                        if (memoryJsonContent?.content) {
+                            try {
+                                const parsed = JSON.parse(memoryJsonContent.content);
+                                if (Array.isArray(parsed)) memoryFacts = parsed.map(String);
+                                else if (parsed && typeof parsed === 'object') memoryFacts = Object.values(parsed).map(String);
+                            } catch { /* empty */ }
+                        }
+
                         return (
                             <div>
-                                <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
-                                        <div style={{ maxWidth: '720px' }}>
-                                            <h3 style={{ marginBottom: '4px' }}>{t('agent.capability.title')}</h3>
-                                            <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('agent.capability.description')}</p>
-                                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                                                <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-secondary)', minWidth: '180px' }}>
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{t('agent.capability.sections.skills')}</div>
-                                                    <div style={{ fontSize: '18px', fontWeight: 700 }}>{installedSkillFolders.length + installedSkillFiles.length}</div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{t('agent.capability.skillsSummary', { count: installedSkillFolders.length + installedSkillFiles.length })}</div>
-                                                </div>
-                                                <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-secondary)', minWidth: '220px' }}>
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{t('agent.capability.sections.tools')}</div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{t('agent.capability.connectedEmpty')}</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                            <button
-                                                className="btn btn-secondary"
-                                                style={{ fontSize: '13px' }}
-                                                onClick={() => { setShowAgentUrlImport(true); setAgentUrlInput(''); }}
-                                            >
-                                                {t('agent.capability.skillsUrl')}
-                                            </button>
-                                            <button
-                                                className="btn btn-secondary"
-                                                style={{ fontSize: '13px' }}
-                                                onClick={() => { setShowAgentClawhub(true); setAgentClawhubQuery(''); setAgentClawhubResults([]); }}
-                                            >
-                                                {t('agent.capability.skillsLibrary')}
-                                            </button>
-                                            <button
-                                                className="btn btn-primary"
-                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
-                                                onClick={() => setShowImportSkillModal(true)}
-                                            >
-                                                {t('agent.capability.skillsPreset')}
-                                            </button>
-                                        </div>
-                                    </div>
+                                {/* Sub-tab pill navigation */}
+                                <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: 'var(--bg-secondary)', padding: '4px', borderRadius: '8px' }}>
+                                    {(['skills', 'mcp', 'memory', 'knowledge', 'foundation'] as const).map(sub => (
+                                        <button key={sub} onClick={() => setSkillSubTab(sub)}
+                                            style={{
+                                                padding: '6px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 500,
+                                                background: skillSubTab === sub ? 'var(--bg-primary)' : 'transparent',
+                                                color: skillSubTab === sub ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                                                border: 'none', cursor: 'pointer',
+                                                transition: 'background 0.15s, color 0.15s',
+                                            }}>
+                                            {t(`agent.skillTabs.${sub}`)}
+                                        </button>
+                                    ))}
                                 </div>
 
-                                <div style={{ marginBottom: '24px' }}>
-                                    <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('agent.capability.sections.skills')}</h3>
-                                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('agent.capability.skillsHint')}</p>
-                                    {installedSkillFolders.length + installedSkillFiles.length > 0 ? (
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
-                                            {installedSkillFolders.map((item: any) => (
-                                                <div key={item.path} className="card" style={{ padding: '14px' }}>
-                                                    <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{item.name}</div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('agent.skills.folderFormat')}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{item.path}</div>
-                                                </div>
-                                            ))}
-                                            {installedSkillFiles.map((item: any) => (
-                                                <div key={item.path} className="card" style={{ padding: '14px' }}>
-                                                    <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{item.name}</div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('agent.skills.flatFormat')}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{item.path}</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                                            {t('agent.capability.skillsEmpty')}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Browse ClawHub Modal */}
-                                {showAgentClawhub && (
-                                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAgentClawhub(false)}>
-                                        <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '600px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3>{t('agent.capability.skillsLibrary')}</h3>
-                                                <button onClick={() => setShowAgentClawhub(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
+                                {/* ── Sub-tab 1: Skills ── */}
+                                {skillSubTab === 'skills' && (
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                                            <div>
+                                                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('agent.capability.sections.skills')}</h3>
+                                                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.capability.skillsHint')}</p>
                                             </div>
-                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-                                                {t('agent.capability.skillsHint')}
-                                            </p>
-                                            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                                                <input
-                                                    className="input"
-                                                    placeholder={t('common.search')}
-                                                    value={agentClawhubQuery}
-                                                    onChange={e => setAgentClawhubQuery(e.target.value)}
-                                                    onKeyDown={e => {
-                                                        if (e.key === 'Enter' && agentClawhubQuery.trim()) {
-                                                            setAgentClawhubSearching(true);
-                                                            skillApi.clawhub.search(agentClawhubQuery).then(r => { setAgentClawhubResults(r); setAgentClawhubSearching(false); }).catch(() => setAgentClawhubSearching(false));
-                                                        }
-                                                    }}
-                                                    style={{ flex: 1, fontSize: '13px' }}
-                                                />
-                                                <button
-                                                    className="btn btn-primary"
-                                                    style={{ fontSize: '13px' }}
-                                                    disabled={!agentClawhubQuery.trim() || agentClawhubSearching}
-                                                    onClick={() => {
-                                                        setAgentClawhubSearching(true);
-                                                        skillApi.clawhub.search(agentClawhubQuery).then(r => { setAgentClawhubResults(r); setAgentClawhubSearching(false); }).catch(() => setAgentClawhubSearching(false));
-                                                    }}
-                                                >
-                                                    {agentClawhubSearching ? 'Searching...' : 'Search'}
+                                            <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
+                                                <button className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={() => { setShowAgentUrlImport(true); setAgentUrlInput(''); }}>
+                                                    {t('agent.capability.skillsUrl')}
+                                                </button>
+                                                <button className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={() => { setShowAgentClawhub(true); setAgentClawhubQuery(''); setAgentClawhubResults([]); }}>
+                                                    {t('agent.capability.skillsLibrary')}
+                                                </button>
+                                                <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowImportSkillModal(true)}>
+                                                    {t('agent.capability.skillsPreset')}
                                                 </button>
                                             </div>
-                                            <div style={{ flex: 1, overflowY: 'auto' }}>
-                                                {agentClawhubResults.length === 0 && !agentClawhubSearching && (
-                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)', fontSize: '13px' }}>{t('agent.capability.skillsHint')}</div>
-                                                )}
-                                                {agentClawhubResults.map((r: any) => (
-                                                    <div key={r.slug} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', marginBottom: '6px', border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                                                        <div style={{ flex: 1 }}>
-                                                            <div style={{ fontWeight: 600, fontSize: '13px' }}>{r.displayName || r.slug}</div>
-                                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{r.summary?.substring(0, 100)}</div>
+                                        </div>
+
+                                        {/* Installed skills */}
+                                        {installedSkillFolders.length + installedSkillFiles.length > 0 ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
+                                                {installedSkillFolders.map((item: any) => (
+                                                    <div key={item.path} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
+                                                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{'\uD83D\uDCC1'}</span>
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>{item.name}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t('agent.skills.folderFormat')}</div>
                                                         </div>
-                                                        <button
-                                                            className="btn btn-secondary"
-                                                            style={{ fontSize: '12px', padding: '5px 12px', marginLeft: '12px' }}
-                                                            disabled={agentClawhubInstalling === r.slug}
-                                                            onClick={async () => {
-                                                                setAgentClawhubInstalling(r.slug);
-                                                                try {
-                                                                    const res = await skillApi.agentImport.fromClawhub(id!, r.slug);
-                                                                    alert(`Installed "${r.displayName || r.slug}" (${res.files_written} files)`);
-                                                                    queryClient.invalidateQueries({ queryKey: ['files', id, 'skills'] });
-                                                                } catch (err: any) {
-                                                                    alert(`Import failed: ${err?.message || err}`);
-                                                                } finally {
-                                                                    setAgentClawhubInstalling(null);
-                                                                }
-                                                            }}
-                                                        >
-                                                            {agentClawhubInstalling === r.slug ? '安装中...' : '安装'}
-                                                        </button>
+                                                        <span style={{ fontSize: '12px', color: 'var(--success)', flexShrink: 0 }}>{'\u2713'}</span>
+                                                    </div>
+                                                ))}
+                                                {installedSkillFiles.map((item: any) => (
+                                                    <div key={item.path} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
+                                                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{'\uD83D\uDCC4'}</span>
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>{item.name}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t('agent.skills.flatFormat')}</div>
+                                                        </div>
+                                                        <span style={{ fontSize: '12px', color: 'var(--success)', flexShrink: 0 }}>{'\u2713'}</span>
                                                     </div>
                                                 ))}
                                             </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Import from URL Modal */}
-                                {showAgentUrlImport && (
-                                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAgentUrlImport(false)}>
-                                        <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3>{t('agent.capability.skillsUrl')}</h3>
-                                                <button onClick={() => setShowAgentUrlImport(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
+                                        ) : (
+                                            <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px', marginBottom: '24px' }}>
+                                                {t('agent.capability.skillsEmpty')}
                                             </div>
-                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-                                                {t('agent.capability.filesHint')}
-                                            </p>
-                                            <input
-                                                className="input"
-                                                placeholder="https://github.com/owner/repo/tree/main/path/to/skill"
-                                                value={agentUrlInput}
-                                                onChange={e => setAgentUrlInput(e.target.value)}
-                                                style={{ width: '100%', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box' }}
-                                            />
-                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                <button className="btn btn-secondary" onClick={() => setShowAgentUrlImport(false)}>Cancel</button>
-                                                <button
-                                                    className="btn btn-primary"
-                                                    disabled={!agentUrlInput.trim() || agentUrlImporting}
-                                                    onClick={async () => {
-                                                        setAgentUrlImporting(true);
-                                                        try {
-                                                            const res = await skillApi.agentImport.fromUrl(id!, agentUrlInput.trim());
-                                                            alert(`Imported ${res.files_written} files`);
-                                                            queryClient.invalidateQueries({ queryKey: ['files', id, 'skills'] });
-                                                            setShowAgentUrlImport(false);
-                                                        } catch (err: any) {
-                                                            alert(`Import failed: ${err?.message || err}`);
-                                                        } finally {
-                                                            setAgentUrlImporting(false);
-                                                        }
-                                                    }}
-                                                >
-                                                    {agentUrlImporting ? '导入中...' : '导入'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                        )}
 
-                                {/* Import from Presets Modal */}
-                                {showImportSkillModal && (
-                                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowImportSkillModal(false)}>
-                                        <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '600px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3>📦 {t('agent.capability.skillsPreset')}</h3>
-                                                <button onClick={() => setShowImportSkillModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>✕</button>
-                                            </div>
-                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 16px' }}>
-                                                选择一个内置技能模板导入到当前数字员工，相关技能文件会自动复制到该数字员工的技能目录。
-                                            </p>
-                                            <div style={{ flex: 1, overflowY: 'auto' }}>
-                                                {!globalSkillsForImport ? (
-                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>Loading...</div>
-                                                ) : globalSkillsForImport.length === 0 ? (
-                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>当前没有可导入的内置技能模板</div>
-                                                ) : (
-                                                    globalSkillsForImport.map((skill: any) => (
-                                                        <div
-                                                            key={skill.id}
-                                                            style={{
-                                                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                                padding: '12px 14px', borderRadius: '8px', marginBottom: '8px',
-                                                                border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)',
-                                                                transition: 'border-color 0.15s',
-                                                            }}
-                                                            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                                                            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-subtle)')}
-                                                        >
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-                                                                <span style={{ fontSize: '20px' }}>{skill.icon || '📋'}</span>
-                                                                <div>
-                                                                    <div style={{ fontWeight: 600, fontSize: '14px' }}>{skill.name}</div>
-                                                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                                                                        {skill.description?.substring(0, 100)}{skill.description?.length > 100 ? '...' : ''}
-                                                                    </div>
-                                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                                                                        📁 {skill.folder_name}
-                                                                        {skill.is_default && <span style={{ marginLeft: '8px', color: 'var(--accent-primary)', fontWeight: 600 }}>✓ Default</span>}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <button
-                                                                className="btn btn-secondary"
-                                                                style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 14px' }}
-                                                                disabled={importingSkillId === skill.id}
-                                                                onClick={async () => {
-                                                                    setImportingSkillId(skill.id);
-                                                                    try {
-                                                                        const res = await fileApi.importSkill(id!, skill.id);
-                                                                        alert(`✅ Imported "${skill.name}" (${res.files_written} files)`);
-                                                                        queryClient.invalidateQueries({ queryKey: ['files', id, 'skills'] });
-                                                                        setShowImportSkillModal(false);
-                                                                    } catch (err: any) {
-                                                                        alert(`❌ Import failed: ${err?.message || err}`);
-                                                                    } finally {
-                                                                        setImportingSkillId(null);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {importingSkillId === skill.id ? '⏳ 导入中...' : '⬇️ 导入'}
-                                                            </button>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                                {/* Section 2: Imported tools and connections */}
-                                <div style={{ marginTop: '32px' }}>
-                                    <h3 style={{ marginBottom: '12px', fontSize: '14px' }}>{t('agent.capability.sections.tools')}</h3>
-                                    <CapabilitiesView agentId={id!} canManage={canManage} />
-                                </div>
-
-                                <details className="card" style={{ marginTop: '24px' }}>
-                                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>&#x25B6;</span>
-                                        {t('agent.capability.sections.skillFiles')}
-                                    </summary>
-                                    <div style={{ marginTop: '12px' }}>
-                                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('agent.capability.filesHint')}</p>
-                                        <FileBrowser api={adapter} rootPath="skills" features={{ newFile: true, edit: true, delete: true, newFolder: true, upload: true, directoryNavigation: true }} title={t('agent.skills.skillFiles')} />
-                                    </div>
-                                </details>
-
-                                {/* Section 3: Personality & Memory (collapsible) */}
-                                {(() => {
-                                    const mindAdapter: FileBrowserApi = {
-                                        list: (p) => fileApi.list(id!, p),
-                                        read: (p) => fileApi.read(id!, p),
-                                        write: (p, c) => fileApi.write(id!, p, c),
-                                        delete: (p) => fileApi.delete(id!, p),
-                                        downloadUrl: (p) => fileApi.downloadUrl(id!, p),
-                                    };
-                                    return (
-                                        <details className="card" style={{ marginTop: '32px' }}>
+                                        {/* Skill file browser (collapsible) */}
+                                        <details className="card">
                                             <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>&#x25B6;</span>
-                                                {t('agent.mind.personalityMemory', 'Personality & Memory')}
+                                                <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>{'\u25B6'}</span>
+                                                {t('agent.capability.sections.skillFiles')}
                                             </summary>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '16px' }}>
-                                                <div>
-                                                    <h4 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-                                                        {t('agent.soul.title')}
-                                                    </h4>
-                                                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
-                                                        {t('agent.mind.soulDesc', 'Core identity, personality, and behavior boundaries.')}
-                                                    </p>
-                                                    <FileBrowser api={mindAdapter} singleFile="soul.md" title="" features={{ edit: (agent as any)?.access_level !== 'use' }} />
-                                                </div>
-                                                <div>
-                                                    <h4 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-                                                        {t('agent.memory.title')}
-                                                    </h4>
-                                                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
-                                                        {t('agent.mind.memoryDesc', 'Persistent memory accumulated through conversations and experiences.')}
-                                                    </p>
-                                                    <FileBrowser api={mindAdapter} rootPath="memory" readOnly features={{}} />
-                                                </div>
+                                            <div style={{ marginTop: '12px' }}>
+                                                <FileBrowser api={adapter} rootPath="skills" features={{ newFile: true, edit: true, delete: true, newFolder: true, upload: true, directoryNavigation: true }} title={t('agent.skills.skillFiles')} />
                                             </div>
                                         </details>
-                                    );
-                                })()}
 
-                                {/* Section 4: Files (collapsible) */}
-                                {(() => {
-                                    const wsAdapter: FileBrowserApi = {
+                                        {/* Modals (ClawHub / URL / Presets) */}
+                                        {showAgentClawhub && (
+                                            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAgentClawhub(false)}>
+                                                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '600px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                        <h3>{t('agent.capability.skillsLibrary')}</h3>
+                                                        <button onClick={() => setShowAgentClawhub(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                                                        <input className="input" placeholder={t('common.search')} value={agentClawhubQuery} onChange={e => setAgentClawhubQuery(e.target.value)}
+                                                            onKeyDown={e => { if (e.key === 'Enter' && agentClawhubQuery.trim()) { setAgentClawhubSearching(true); skillApi.clawhub.search(agentClawhubQuery).then(r => { setAgentClawhubResults(r); setAgentClawhubSearching(false); }).catch(() => setAgentClawhubSearching(false)); } }}
+                                                            style={{ flex: 1, fontSize: '13px' }} />
+                                                        <button className="btn btn-primary" style={{ fontSize: '13px' }} disabled={!agentClawhubQuery.trim() || agentClawhubSearching}
+                                                            onClick={() => { setAgentClawhubSearching(true); skillApi.clawhub.search(agentClawhubQuery).then(r => { setAgentClawhubResults(r); setAgentClawhubSearching(false); }).catch(() => setAgentClawhubSearching(false)); }}>
+                                                            {agentClawhubSearching ? 'Searching...' : 'Search'}
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                                                        {agentClawhubResults.length === 0 && !agentClawhubSearching && (
+                                                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)', fontSize: '13px' }}>{t('agent.capability.skillsHint')}</div>
+                                                        )}
+                                                        {agentClawhubResults.map((r: any) => (
+                                                            <div key={r.slug} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', marginBottom: '6px', border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{r.displayName || r.slug}</div>
+                                                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{r.summary?.substring(0, 100)}</div>
+                                                                </div>
+                                                                <button className="btn btn-secondary" style={{ fontSize: '12px', padding: '5px 12px', marginLeft: '12px' }} disabled={agentClawhubInstalling === r.slug}
+                                                                    onClick={async () => { setAgentClawhubInstalling(r.slug); try { const res = await skillApi.agentImport.fromClawhub(id!, r.slug); alert(`Installed "${r.displayName || r.slug}" (${res.files_written} files)`); queryClient.invalidateQueries({ queryKey: ['files', id, 'skills'] }); } catch (err: any) { alert(`Import failed: ${err?.message || err}`); } finally { setAgentClawhubInstalling(null); } }}>
+                                                                    {agentClawhubInstalling === r.slug ? t('common.loading') : t('common.confirm')}
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {showAgentUrlImport && (
+                                            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAgentUrlImport(false)}>
+                                                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                        <h3>{t('agent.capability.skillsUrl')}</h3>
+                                                        <button onClick={() => setShowAgentUrlImport(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
+                                                    </div>
+                                                    <input className="input" placeholder="https://github.com/owner/repo/tree/main/path/to/skill" value={agentUrlInput} onChange={e => setAgentUrlInput(e.target.value)}
+                                                        style={{ width: '100%', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box' }} />
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                                        <button className="btn btn-secondary" onClick={() => setShowAgentUrlImport(false)}>Cancel</button>
+                                                        <button className="btn btn-primary" disabled={!agentUrlInput.trim() || agentUrlImporting}
+                                                            onClick={async () => { setAgentUrlImporting(true); try { const res = await skillApi.agentImport.fromUrl(id!, agentUrlInput.trim()); alert(`Imported ${res.files_written} files`); queryClient.invalidateQueries({ queryKey: ['files', id, 'skills'] }); setShowAgentUrlImport(false); } catch (err: any) { alert(`Import failed: ${err?.message || err}`); } finally { setAgentUrlImporting(false); } }}>
+                                                            {agentUrlImporting ? t('common.loading') : t('common.confirm')}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {showImportSkillModal && (
+                                            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowImportSkillModal(false)}>
+                                                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '600px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                        <h3>{t('agent.capability.skillsPreset')}</h3>
+                                                        <button onClick={() => setShowImportSkillModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
+                                                    </div>
+                                                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                                                        {!globalSkillsForImport ? (
+                                                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>{t('common.loading')}</div>
+                                                        ) : globalSkillsForImport.length === 0 ? (
+                                                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>{t('agent.capability.skillsEmpty')}</div>
+                                                        ) : (
+                                                            globalSkillsForImport.map((skill: any) => (
+                                                                <div key={skill.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '8px', marginBottom: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}
+                                                                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                                                                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-subtle)')}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                                                                        <span style={{ fontSize: '20px' }}>{skill.icon || '\uD83D\uDCCB'}</span>
+                                                                        <div>
+                                                                            <div style={{ fontWeight: 600, fontSize: '14px' }}>{skill.name}</div>
+                                                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{skill.description?.substring(0, 100)}{skill.description?.length > 100 ? '...' : ''}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 14px' }} disabled={importingSkillId === skill.id}
+                                                                        onClick={async () => { setImportingSkillId(skill.id); try { const res = await fileApi.importSkill(id!, skill.id); alert(`Imported "${skill.name}" (${res.files_written} files)`); queryClient.invalidateQueries({ queryKey: ['files', id, 'skills'] }); setShowImportSkillModal(false); } catch (err: any) { alert(`Import failed: ${err?.message || err}`); } finally { setImportingSkillId(null); } }}>
+                                                                        {importingSkillId === skill.id ? t('common.loading') : t('common.confirm')}
+                                                                    </button>
+                                                                </div>
+                                                            ))
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* ── Sub-tab 2: MCP / Imported Tools ── */}
+                                {skillSubTab === 'mcp' && (
+                                    <div>
+                                        <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>{t('agent.capability.sections.tools')}</h3>
+                                        <CapabilitiesView agentId={id!} canManage={canManage} />
+                                    </div>
+                                )}
+
+                                {/* ── Sub-tab 3: Memory ── */}
+                                {skillSubTab === 'memory' && (
+                                    <div>
+                                        {/* Memory facts from memory.json */}
+                                        <div className="card" style={{ marginBottom: '20px' }}>
+                                            <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>{t('agent.memory.title')}</h3>
+                                            {memoryFacts.length > 0 ? (
+                                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
+                                                    {memoryFacts.map((fact, i) => (
+                                                        <li key={i}>{fact}</li>
+                                                    ))}
+                                                </ul>
+                                            ) : (
+                                                <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                                                    {t('agent.capability.skillsEmpty')}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* memory.md editable */}
+                                        <div className="card">
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                <h3 style={{ fontSize: '14px', fontWeight: 600 }}>memory.md</h3>
+                                                {canManage && !memoryMdEditing && (
+                                                    <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setMemoryMdDraft(memoryMdContent?.content || ''); setMemoryMdEditing(true); }}>
+                                                        {t('agent.overview.editFile')}
+                                                    </button>
+                                                )}
+                                                {memoryMdEditing && (
+                                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setMemoryMdEditing(false)}>
+                                                            {t('agent.overview.cancelEdit')}
+                                                        </button>
+                                                        <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saveMemoryMd.isPending} onClick={() => saveMemoryMd.mutate()}>
+                                                            {saveMemoryMd.isPending ? t('agent.overview.saving') : t('agent.overview.saveFile')}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {memoryMdEditing ? (
+                                                <textarea className="input" value={memoryMdDraft} onChange={e => setMemoryMdDraft(e.target.value)} rows={10}
+                                                    style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }} />
+                                            ) : (
+                                                <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+                                                    {memoryMdContent?.content ? (
+                                                        <MarkdownRenderer content={memoryMdContent.content} />
+                                                    ) : (
+                                                        <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>memory.md</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ── Sub-tab 4: Knowledge Base ── */}
+                                {skillSubTab === 'knowledge' && (() => {
+                                    const kbAdapter: FileBrowserApi = {
                                         list: (p) => fileApi.list(id!, p),
                                         read: (p) => fileApi.read(id!, p),
                                         write: (p, c) => fileApi.write(id!, p, c),
@@ -2544,18 +2402,52 @@ function AgentDetailInner() {
                                         upload: (file, path, onProgress) => fileApi.upload(id!, file, path + '/', onProgress),
                                         downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                                     };
+                                    const eiAdapter: FileBrowserApi = {
+                                        list: (p) => fileApi.list(id!, p),
+                                        read: (p) => fileApi.read(id!, p),
+                                        write: (p, c) => fileApi.write(id!, p, c),
+                                        delete: (p) => fileApi.delete(id!, p),
+                                        downloadUrl: (p) => fileApi.downloadUrl(id!, p),
+                                    };
                                     return (
-                                        <details className="card" style={{ marginTop: '16px' }}>
-                                            <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>&#x25B6;</span>
-                                                {t('agent.tabs.workspace', 'Files')}
-                                            </summary>
-                                            <div style={{ marginTop: '12px' }}>
-                                                <FileBrowser api={wsAdapter} rootPath="workspace" features={{ upload: true, newFile: true, newFolder: true, edit: true, delete: true, directoryNavigation: true }} />
+                                        <div>
+                                            <div style={{ marginBottom: '24px' }}>
+                                                <FileBrowser api={kbAdapter} rootPath="workspace/knowledge_base" features={{ upload: true, newFile: true, newFolder: true, edit: true, delete: true, directoryNavigation: true }} />
                                             </div>
-                                        </details>
+                                            <details className="card">
+                                                <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>{'\u25B6'}</span>
+                                                    enterprise_info/
+                                                </summary>
+                                                <div style={{ marginTop: '12px' }}>
+                                                    <FileBrowser api={eiAdapter} rootPath="enterprise_info" readOnly features={{}} />
+                                                </div>
+                                            </details>
+                                        </div>
                                     );
                                 })()}
+
+                                {/* ── Sub-tab 5: Foundation (read-only) ── */}
+                                {skillSubTab === 'foundation' && (
+                                    <div>
+                                        <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{t('agent.foundation.title')}</h3>
+                                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>{t('agent.foundation.description')}</p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+                                            {FOUNDATION_ITEMS.map(item => (
+                                                <div key={item.label} className="card" style={{ padding: '14px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                                                    <span style={{ fontSize: '22px', flexShrink: 0, lineHeight: 1 }}>{item.icon}</span>
+                                                    <div>
+                                                        <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>{item.label}</div>
+                                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{item.desc}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                                            {t('agent.foundation.alwaysAvailable')}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })()

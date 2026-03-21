@@ -241,6 +241,39 @@
       "saving": "Saving...",
       "cancelButton": "Cancel"
     },
+    "skillTabs": {
+      "skills": "Skills",
+      "mcp": "Imported Tools",
+      "memory": "Memory",
+      "knowledge": "Knowledge Base",
+      "foundation": "Foundation"
+    },
+    "foundation": {
+      "title": "Built-in Capabilities",
+      "description": "Every digital employee has these capabilities by default.",
+      "fileIO": "File Read/Write",
+      "fileIODesc": "Read, write, and edit files in the workspace",
+      "search": "File Search",
+      "searchDesc": "Search files by name or content",
+      "skills": "Skill Loading",
+      "skillsDesc": "Load skills on demand to gain more abilities",
+      "triggers": "Scheduled Tasks",
+      "triggersDesc": "Set triggers to execute tasks automatically",
+      "messaging": "Send Messages",
+      "messagingDesc": "Send messages to colleagues or other agents",
+      "toolDiscovery": "Tool Discovery",
+      "toolDiscoveryDesc": "Search and import new external tools",
+      "alwaysAvailable": "These capabilities are always available and don't need to be installed."
+    },
+    "overview": {
+      "personality": "Personality",
+      "workingOn": "Working On",
+      "editFile": "Edit",
+      "saveFile": "Save",
+      "cancelEdit": "Cancel",
+      "saving": "Saving...",
+      "emptyFocus": "No current focus. The agent will update this during work."
+    },
     "memory": {
       "title": "Memory Files",
       "indexFile": "Index",
