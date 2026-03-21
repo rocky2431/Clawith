@@ -1081,6 +1081,12 @@ function AgentDetailInner() {
     const [showAllTriggers, setShowAllTriggers] = useState(false);
     const [showAllReflections, setShowAllReflections] = useState(false);
     const [skillSubTab, setSkillSubTab] = useState<'skills' | 'mcp' | 'knowledge'>('skills');
+    const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
+    const { data: expandedSkillContent } = useQuery({
+        queryKey: ['skill-content', id, expandedSkill],
+        queryFn: () => fileApi.read(id!, expandedSkill!),
+        enabled: !!id && !!expandedSkill,
+    });
     const [reflectionPage, setReflectionPage] = useState(0);
     const REFLECTIONS_PAGE_SIZE = 10;
     const SECTION_PAGE_SIZE = 5;
@@ -2129,12 +2135,8 @@ function AgentDetailInner() {
                             downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                         };
                         const allSkillItems = [...skillFiles];
-                        const [expandedSkill, setExpandedSkill] = React.useState<string | null>(null);
-                        const { data: expandedSkillContent } = useQuery({
-                            queryKey: ['skill-content', id, expandedSkill],
-                            queryFn: () => fileApi.read(id!, expandedSkill!),
-                            enabled: !!id && !!expandedSkill,
-                        });
+                        // expandedSkill state and query are hoisted to main component level
+                        // to avoid React hook ordering violation
 
                         return (
                             <div>
