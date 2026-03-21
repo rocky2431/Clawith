@@ -185,6 +185,14 @@ export default function AgentCreate() {
                 tenant_id: currentTenant || undefined,
                 security_zone: 'standard',
                 agent_class: 'internal_tenant',
+                autonomy_policy: {
+                    read_files: 'L1',
+                    write_workspace_files: 'L2',
+                    delete_files: 'L3',
+                    send_feishu_message: 'L2',
+                    web_search: 'L1',
+                    execute_code: 'L2',
+                },
             },
             channels: [],
         });
