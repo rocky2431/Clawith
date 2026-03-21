@@ -467,7 +467,7 @@ function SkillsTab() {
                 <div>
                     <h3>{t('enterprise.tabs.skills', 'Skill Registry')}</h3>
                     <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                        Manage global skills. Each skill is a folder with a SKILL.md file. Skills selected during agent creation are copied to the agent's workspace.
+                        公司级技能模板会出现在数字员工创建流程中。你可以从技能库或链接导入，再按需分配给具体数字员工。
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
@@ -495,14 +495,14 @@ function SkillsTab() {
                         style={{ fontSize: '13px' }}
                         onClick={() => { setShowUrlModal(true); setUrlInput(''); setUrlPreview(null); }}
                     >
-                        Import from URL
+                        {t('agent.capability.skillsUrl')}
                     </button>
                     <button
                         className="btn btn-primary"
                         style={{ fontSize: '13px' }}
                         onClick={() => { setShowClawhubModal(true); setSearchQuery(''); setSearchResults([]); setHasSearched(false); }}
                     >
-                        Browse ClawHub
+                        {t('agent.capability.skillsLibrary')}
                     </button>
                 </div>
             </div>
@@ -704,13 +704,13 @@ function SkillsTab() {
                         {/* Header */}
                         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                <h3 style={{ margin: 0, fontSize: '16px' }}>Browse ClawHub</h3>
+                                <h3 style={{ margin: 0, fontSize: '16px' }}>{t('agent.capability.skillsLibrary')}</h3>
                                 <button className="btn btn-ghost" onClick={() => setShowClawhubModal(false)} style={{ padding: '4px 8px', fontSize: '16px', lineHeight: 1 }}>x</button>
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <input
                                     className="input"
-                                    placeholder="Search skills..."
+                                    placeholder={t('common.search')}
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -726,7 +726,7 @@ function SkillsTab() {
                         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 24px' }}>
                             {searchResults.length === 0 && !searching && (
                                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                                    {hasSearched ? 'No results found' : 'Search for skills on ClawHub marketplace'}
+                                    {hasSearched ? t('common.noData') : '从技能库中搜索并导入技能'}
                                 </div>
                             )}
                             {searching && (
@@ -775,12 +775,12 @@ function SkillsTab() {
                     }} onClick={e => e.stopPropagation()}>
                         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                <h3 style={{ margin: 0, fontSize: '16px' }}>Import from URL</h3>
-                                <button className="btn btn-ghost" onClick={() => setShowUrlModal(false)} style={{ padding: '4px 8px', fontSize: '16px', lineHeight: 1 }}>x</button>
-                            </div>
-                            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '0 0 12px' }}>
-                                Paste a GitHub URL pointing to a skill directory containing SKILL.md
-                            </p>
+                                                <h3 style={{ margin: 0, fontSize: '16px' }}>{t('agent.capability.skillsUrl')}</h3>
+                                                <button className="btn btn-ghost" onClick={() => setShowUrlModal(false)} style={{ padding: '4px 8px', fontSize: '16px', lineHeight: 1 }}>x</button>
+                                            </div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '0 0 12px' }}>
+                                                贴入一个包含 `SKILL.md` 的 GitHub 技能目录链接，系统会先预览再导入。
+                                            </p>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <input
                                     className="input"
@@ -1318,7 +1318,7 @@ function MemoryTab({ models }: { models: LLMModel[] }) {
 export default function EnterpriseSettings() {
     const { t } = useTranslation();
     const qc = useQueryClient();
-    type TabKey = 'info' | 'llm' | 'org' | 'approvals' | 'audit' | 'packs' | 'mcp' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory' | 'sso' | 'capabilities' | 'config' | 'kb';
+    type TabKey = 'info' | 'llm' | 'org' | 'approvals' | 'audit' | 'mcp' | 'skills' | 'quotas' | 'users' | 'flags' | 'invites' | 'memory' | 'sso' | 'capabilities' | 'config' | 'kb';
 
     interface SidebarGroup {
         key: string;
@@ -1328,7 +1328,7 @@ export default function EnterpriseSettings() {
     const SIDEBAR_GROUPS: SidebarGroup[] = [
         { key: 'overview', tabs: ['info'] },
         { key: 'team', tabs: ['users', 'invites', 'org', 'sso', 'quotas'] },
-        { key: 'ai', tabs: ['llm', 'skills', 'mcp', 'packs', 'memory'] },
+        { key: 'ai', tabs: ['llm', 'skills', 'mcp', 'memory'] },
         { key: 'security', tabs: ['capabilities', 'approvals', 'audit'] },
         { key: 'platform', tabs: ['config', 'kb', 'flags'] },
     ];
@@ -1592,7 +1592,7 @@ export default function EnterpriseSettings() {
     const { data: packCatalog = [], isLoading: packsLoading } = useQuery({
         queryKey: ['pack-catalog'],
         queryFn: () => packApi.catalog(),
-        enabled: activeTab === 'packs',
+        enabled: activeTab === 'mcp',
     });
     const { data: tenantMcpServers = [], isLoading: mcpLoading } = useQuery({
         queryKey: ['tenant-mcp-registry'],
@@ -2487,139 +2487,47 @@ export default function EnterpriseSettings() {
                     <UserManagement key={selectedTenantId} />
                 )}
 
-                {/* ── Packs Tab ── */}
-                {activeTab === 'packs' && (
-                    <div>
-                        <h3 style={{ marginBottom: '4px' }}>{t('enterprise.packs.title')}</h3>
-                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
-                            {t('enterprise.packs.description')}
-                        </p>
-                        {packsLoading ? (
-                            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>Loading...</div>
-                        ) : packCatalog.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>{t('common.noData')}</div>
-                        ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '12px' }}>
-                                {packCatalog.map((pack: any) => {
-                                    const isExpanded = expandedPacks[pack.name] ?? false;
-                                    const sourceBadgeColors: Record<string, { bg: string; color: string }> = {
-                                        system: { bg: 'rgba(59,130,246,0.15)', color: '#60a5fa' },
-                                        channel: { bg: 'rgba(34,197,94,0.15)', color: '#4ade80' },
-                                        mcp: { bg: 'rgba(168,85,247,0.15)', color: '#c084fc' },
-                                        skill: { bg: 'rgba(251,146,60,0.15)', color: '#fb923c' },
-                                    };
-                                    const badge = sourceBadgeColors[pack.source] || sourceBadgeColors.system;
-                                    const sourceLabel = String(t(`enterprise.packs.source${pack.source.charAt(0).toUpperCase() + pack.source.slice(1)}`, pack.source));
-                                    return (
-                                        <div key={pack.name} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>{pack.name}</span>
-                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                    <span style={{
-                                                        fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '10px',
-                                                        background: badge.bg, color: badge.color,
-                                                    }}>{sourceLabel}</span>
-                                                    <button
-                                                        className="btn btn-secondary"
-                                                        style={{ fontSize: '11px', padding: '4px 10px' }}
-                                                        disabled={packSaving === pack.name}
-                                                        onClick={() => handlePackPolicy(pack.name, !pack.enabled)}
-                                                    >
-                                                        {packSaving === pack.name ? '...' : (pack.enabled ? 'Disable' : 'Enable')}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>{pack.summary}</p>
-                                            <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                                                <span>{t('enterprise.packs.activation')}: <strong style={{ color: 'var(--text-secondary)' }}>{pack.activation_mode}</strong></span>
-                                                <span>Status: <strong style={{ color: pack.enabled ? 'var(--success)' : 'var(--text-tertiary)' }}>{pack.enabled ? 'Enabled' : 'Disabled'}</strong></span>
-                                            </div>
-                                            {pack.requires_channel && (
-                                                <div style={{ fontSize: '11px', color: '#60a5fa', background: 'rgba(59,130,246,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
-                                                    {t('enterprise.packs.requiresChannel')}
-                                                </div>
-                                            )}
-                                            {pack.capabilities && pack.capabilities.length > 0 ? (
-                                                <div style={{ fontSize: '11px', color: '#c084fc', background: 'rgba(168,85,247,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
-                                                    {t('enterprise.packs.restricted')}: {pack.capabilities.join(', ')}
-                                                </div>
-                                            ) : (
-                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                                                    {t('enterprise.packs.noCapabilityRestriction')}
-                                                </div>
-                                            )}
-                                            {pack.tools && pack.tools.length > 0 && (
-                                                <div>
-                                                    <button
-                                                        onClick={() => setExpandedPacks(prev => ({ ...prev, [pack.name]: !isExpanded }))}
-                                                        style={{
-                                                            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                                                            fontSize: '12px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '4px',
-                                                        }}
-                                                    >
-                                                        <span style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>&#9654;</span>
-                                                        {t('enterprise.packs.tools')} ({pack.tools.length})
-                                                    </button>
-                                                    {isExpanded && (
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                                                            {pack.tools.map((tool: string) => (
-                                                                <span key={tool} style={{
-                                                                    fontSize: '11px', padding: '2px 8px', borderRadius: '4px',
-                                                                    background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                                                                    border: '1px solid var(--border-subtle)',
-                                                                }}>
-                                                                    {tool}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                )}
-
                 {activeTab === 'mcp' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div className="card">
-                            <h3 style={{ marginBottom: '4px' }}>MCP Registry</h3>
+                            <h3 style={{ marginBottom: '4px' }}>{t('enterprise.importedTools.title')}</h3>
                             <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
-                                Import and manage tenant-wide MCP servers. Imported servers become pack-backed capabilities for all agents in this company.
+                                {t('enterprise.importedTools.description')}
                             </p>
+                            <div style={{ marginBottom: '16px' }}>
+                                <h4 style={{ marginBottom: '4px' }}>{t('enterprise.importedTools.connectTitle')}</h4>
+                                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('enterprise.importedTools.connectDesc')}</p>
+                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                 <div className="form-group">
-                                    <label className="form-label">Smithery Server ID</label>
+                                    <label className="form-label">{t('enterprise.importedTools.smitheryId')}</label>
                                     <input className="form-input" value={mcpForm.server_id} onChange={e => setMcpForm(f => ({ ...f, server_id: e.target.value }))} placeholder="github / gmail / notion" />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Direct MCP URL</label>
+                                    <label className="form-label">{t('enterprise.importedTools.directUrl')}</label>
                                     <input className="form-input" value={mcpForm.mcp_url} onChange={e => setMcpForm(f => ({ ...f, mcp_url: e.target.value }))} placeholder="https://example.com/mcp" />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Display Name</label>
+                                    <label className="form-label">{t('enterprise.importedTools.displayName')}</label>
                                     <input className="form-input" value={mcpForm.server_name} onChange={e => setMcpForm(f => ({ ...f, server_name: e.target.value }))} placeholder="GitHub MCP" />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">API Key (optional)</label>
+                                    <label className="form-label">{t('enterprise.importedTools.apiKey')}</label>
                                     <input className="form-input" type="password" value={mcpForm.api_key} onChange={e => setMcpForm(f => ({ ...f, api_key: e.target.value }))} placeholder="Optional server credential" />
                                 </div>
                             </div>
                             {mcpError ? <div style={{ color: 'var(--error)', fontSize: '12px', marginBottom: '8px' }}>{mcpError}</div> : null}
                             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-primary" onClick={handleImportMcp}>Import MCP Server</button>
+                                <button className="btn btn-primary" onClick={handleImportMcp}>{t('enterprise.importedTools.importAction')}</button>
                             </div>
                         </div>
 
                         <div className="card">
-                            <h4 style={{ marginBottom: '12px' }}>Installed MCP Servers</h4>
+                            <h4 style={{ marginBottom: '12px' }}>{t('enterprise.importedTools.installedTitle')}</h4>
                             {mcpLoading ? (
                                 <div style={{ color: 'var(--text-tertiary)' }}>{t('common.loading')}</div>
                             ) : tenantMcpServers.length === 0 ? (
-                                <div style={{ color: 'var(--text-tertiary)' }}>{t('common.noData')}</div>
+                                <div style={{ color: 'var(--text-tertiary)' }}>{t('enterprise.importedTools.installedEmpty')}</div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {tenantMcpServers.map((server: any) => (
@@ -2629,7 +2537,7 @@ export default function EnterpriseSettings() {
                                                     <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}>{server.server_name}</div>
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>{server.server_url || server.server_key}</div>
                                                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                                                        {server.tool_count} tools · {server.agent_count} agents · pack {server.pack_name}
+                                                        {t('enterprise.importedTools.installedSummary', { toolCount: server.tool_count, agentCount: server.agent_count })}
                                                     </div>
                                                 </div>
                                                 <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => handleDeleteMcp(server.server_key)}>
@@ -2648,6 +2556,98 @@ export default function EnterpriseSettings() {
                                 </div>
                             )}
                         </div>
+
+                        <details className="card">
+                            <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>&#x25B6;</span>
+                                {t('enterprise.importedTools.systemExtensionsTitle')}
+                            </summary>
+                            <div style={{ marginTop: '12px' }}>
+                                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
+                                    {t('enterprise.importedTools.systemExtensionsDesc')}
+                                </p>
+                                {packsLoading ? (
+                                    <div style={{ color: 'var(--text-tertiary)' }}>{t('common.loading')}</div>
+                                ) : packCatalog.length === 0 ? (
+                                    <div style={{ color: 'var(--text-tertiary)' }}>{t('common.noData')}</div>
+                                ) : (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+                                        {packCatalog.map((pack: any) => {
+                                            const isExpanded = expandedPacks[pack.name] ?? false;
+                                            const sourceBadgeColors: Record<string, { bg: string; color: string }> = {
+                                                system: { bg: 'rgba(59,130,246,0.15)', color: '#60a5fa' },
+                                                channel: { bg: 'rgba(34,197,94,0.15)', color: '#4ade80' },
+                                                mcp: { bg: 'rgba(168,85,247,0.15)', color: '#c084fc' },
+                                                skill: { bg: 'rgba(251,146,60,0.15)', color: '#fb923c' },
+                                            };
+                                            const badge = sourceBadgeColors[pack.source] || sourceBadgeColors.system;
+                                            const sourceLabel = String(t(`enterprise.packs.source${pack.source.charAt(0).toUpperCase() + pack.source.slice(1)}`, pack.source));
+                                            return (
+                                                <div key={pack.name} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                        <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>{pack.summary || pack.name}</span>
+                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                            <span style={{
+                                                                fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '10px',
+                                                                background: badge.bg, color: badge.color,
+                                                            }}>{sourceLabel}</span>
+                                                            <button
+                                                                className="btn btn-secondary"
+                                                                style={{ fontSize: '11px', padding: '4px 10px' }}
+                                                                disabled={packSaving === pack.name}
+                                                                onClick={() => handlePackPolicy(pack.name, !pack.enabled)}
+                                                            >
+                                                                {packSaving === pack.name ? '...' : (pack.enabled ? t('enterprise.importedTools.disable') : t('enterprise.importedTools.enable'))}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                                        <span>{t('enterprise.importedTools.source')}: <strong style={{ color: 'var(--text-secondary)' }}>{sourceLabel}</strong></span>
+                                                        <span>{pack.enabled ? t('enterprise.importedTools.enabled') : t('enterprise.importedTools.disabled')}</span>
+                                                    </div>
+                                                    {pack.capabilities && pack.capabilities.length > 0 ? (
+                                                        <div style={{ fontSize: '11px', color: '#c084fc', background: 'rgba(168,85,247,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
+                                                            {t('enterprise.importedTools.restricted')}: {pack.capabilities.join(', ')}
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                                            {t('enterprise.importedTools.unrestricted')}
+                                                        </div>
+                                                    )}
+                                                    {pack.tools && pack.tools.length > 0 && (
+                                                        <div>
+                                                            <button
+                                                                onClick={() => setExpandedPacks(prev => ({ ...prev, [pack.name]: !isExpanded }))}
+                                                                style={{
+                                                                    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                                                                    fontSize: '12px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '4px',
+                                                                }}
+                                                            >
+                                                                <span style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>&#9654;</span>
+                                                                {t('enterprise.importedTools.actions')} ({pack.tools.length})
+                                                            </button>
+                                                            {isExpanded && (
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                                                                    {pack.tools.map((tool: string) => (
+                                                                        <span key={tool} style={{
+                                                                            fontSize: '11px', padding: '2px 8px', borderRadius: '4px',
+                                                                            background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                                                                            border: '1px solid var(--border-subtle)',
+                                                                        }}>
+                                                                            {tool}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </details>
                     </div>
                 )}
 

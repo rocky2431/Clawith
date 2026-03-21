@@ -9,81 +9,152 @@ const enI18nPath = path.resolve(process.cwd(), 'src/i18n/en.json');
 const read = () => fs.readFileSync(agentCreatePath, 'utf8');
 const readFile = (filePath: string) => fs.readFileSync(filePath, 'utf8');
 
-test('AgentCreate no longer depends on legacy templates for native agents', () => {
+test('AgentCreate uses template gallery + 2-step flow (not 5-step wizard)', () => {
     const source = read();
 
-    assert.doesNotMatch(source, /enterpriseApi\.templates/);
-    assert.doesNotMatch(source, /queryKey:\s*\['templates'\]/);
-    assert.doesNotMatch(source, /template_id/);
-    assert.doesNotMatch(source, /selectTemplate/);
+    // Template gallery exists
+    assert.match(source, /AGENT_TEMPLATES/);
+    assert.match(source, /wizard\.templates\.title/);
+    assert.match(source, /wizard\.templates\.research|wizard\.templates\.feishuOps|wizard\.templates\.content|wizard\.templates\.custom/);
+
+    // Phase-based flow, not 5-step STEPS constant
+    assert.match(source, /type Phase = 'templates' \| 'identity' \| 'abilities' \| 'success'/);
+    assert.doesNotMatch(source, /const STEPS\s*=/);
+
+    // 2-step stepper labels only
+    assert.match(source, /wizard\.steps\.identity/);
+    assert.match(source, /wizard\.steps\.abilities/);
 });
 
-test('AgentCreate uses packs and capability language for starter setup', () => {
+test('AgentCreate removed legacy wizard elements', () => {
     const source = read();
 
-    assert.match(source, /packApi\.catalog/);
-    assert.match(source, /capabilityApi\.definitions/);
-    assert.match(source, /starterPacks|selectedPacks|packPreview/);
-    assert.match(source, /wizard\.step2New\.kernelTitle/);
-    assert.match(source, /wizard\.step2New\.starterPacksTitle/);
-    assert.match(source, /wizard\.step2New\.requiredBadge/);
-});
+    // No channel config step
+    assert.doesNotMatch(source, /ChannelConfig/);
+    assert.doesNotMatch(source, /wizard\.stepChannel\./);
 
-test('AgentCreate removes legacy openclaw branching from the main creation flow', () => {
-    const source = read();
+    // No review step
+    assert.doesNotMatch(source, /wizard\.stepReview\./);
 
+    // No kernel tools display
+    assert.doesNotMatch(source, /kernelTools/);
+    assert.doesNotMatch(source, /wizard\.step2New\.kernelTitle/);
+
+    // No pack preview display
+    assert.doesNotMatch(source, /starterPacks|selectedPacks|packPreview/);
+    assert.doesNotMatch(source, /wizard\.step2New\.starterPacksTitle/);
+
+    // No governed actions hint
+    assert.doesNotMatch(source, /governedActionsHint/);
+
+    // No security zone selection
+    assert.doesNotMatch(source, /security_zone.*radio|agent\.zone\./);
+
+    // No token limits in creation
+    assert.doesNotMatch(source, /max_tokens_per_day|max_tokens_per_month/);
+
+    // No agent class selector
+    assert.doesNotMatch(source, /agent_class.*select|agent_class.*radio/);
+
+    // No legacy openclaw
     assert.doesNotMatch(source, /const OPENCLAW_STEPS/);
     assert.doesNotMatch(source, /agentType/);
-    assert.doesNotMatch(source, /typeSelector/);
-    assert.doesNotMatch(source, /openclaw\./);
-    assert.doesNotMatch(source, /agent_type:\s*agentType/);
-    assert.doesNotMatch(source, /agent_type:\s*'native'/);
+});
+
+test('AgentCreate still calls agentApi.bootstrap with smart defaults', () => {
+    const source = read();
+
     assert.match(source, /agentApi\.bootstrap/);
-    assert.doesNotMatch(source, /channelApi\.create\(/);
-    assert.doesNotMatch(source, /window\.alert\(/);
-    assert.doesNotMatch(source, /Risk & Approval/);
+    assert.match(source, /security_zone:\s*'standard'/);
+    assert.match(source, /permission_scope_type:\s*'company'/);
+    assert.match(source, /agent_class:\s*'internal_tenant'/);
 });
 
-test('AgentCreate forwards bootstrap channel failures to AgentDetail state instead of alerting inline', () => {
+test('AgentCreate has success screen with navigation', () => {
     const source = read();
 
-    assert.match(source, /bootstrapChannelFailures/);
-    assert.match(source, /navigate\(`\/agents\/\$\{agent\.id\}`,\s*failedChannels\.length > 0 \?/);
+    assert.match(source, /wizard\.success\.title/);
+    assert.match(source, /wizard\.success\.startChat/);
+    assert.match(source, /wizard\.success\.connectChannel/);
+    assert.match(source, /createdAgentId/);
+    assert.match(source, /createdAgentName/);
 });
 
-test('AgentCreate uses dedicated channel and review keys instead of duplicated step5 keys', () => {
+test('AgentCreate uses Recommended badge instead of Required badge', () => {
     const source = read();
 
-    assert.match(source, /wizard\.stepChannel\.title/);
-    assert.match(source, /wizard\.stepChannel\.description/);
-    assert.match(source, /wizard\.stepChannel\.skipHint/);
-    assert.match(source, /wizard\.stepReview\.title/);
-    assert.match(source, /wizard\.stepReview\.summary/);
-    assert.doesNotMatch(source, /wizard\.step5\.title/);
-    assert.doesNotMatch(source, /wizard\.step5\.description/);
-    assert.doesNotMatch(source, /wizard\.step5\.skipHint/);
+    assert.match(source, /wizard\.abilities\.recommendedBadge/);
+    assert.doesNotMatch(source, /wizard\.step2New\.requiredBadge/);
 });
 
-test('agent create i18n keeps distinct channel/review sections without duplicated step5 blocks', () => {
-    const zhSource = readFile(zhI18nPath);
-    const enSource = readFile(enI18nPath);
-    const zh = JSON.parse(zhSource);
-    const en = JSON.parse(enSource);
+test('AgentCreate uses dropdown for model selection instead of radio cards', () => {
+    const source = read();
 
-    assert.equal((zhSource.match(/"step5":\s*\{/g) || []).length, 0);
-    assert.equal((enSource.match(/"step5":\s*\{/g) || []).length, 0);
-    assert.equal(zh.wizard.stepChannel.title, '通道绑定');
-    assert.equal(en.wizard.stepChannel.title, 'Channel Configuration');
-    assert.equal(zh.wizard.stepReview.title, '确认创建');
-    assert.equal(en.wizard.stepReview.title, 'Review & Create');
+    assert.match(source, /<select/);
+    assert.match(source, /wizard\.identity\.aiModel/);
+    assert.doesNotMatch(source, /wizard\.step1\.primaryModel/);
 });
 
-test('agent create kernel capability copy no longer presents email as a default pack track', () => {
+test('i18n has template gallery keys in both languages', () => {
     const zh = JSON.parse(readFile(zhI18nPath));
     const en = JSON.parse(readFile(enI18nPath));
 
-    assert.doesNotMatch(zh.wizard.step2New.kernelInfo, /邮件/);
-    assert.doesNotMatch(en.wizard.step2New.kernelInfo, /email/i);
-    assert.doesNotMatch(zh.wizard.step2New.kernelInfo, /文档/);
-    assert.doesNotMatch(en.wizard.step2New.kernelInfo, /document/i);
+    assert.equal(en.wizard.templates.title, 'Choose a starting point');
+    assert.equal(zh.wizard.templates.title, '\u9009\u62E9\u4E00\u4E2A\u8D77\u70B9');
+
+    assert.equal(en.wizard.templates.research, 'Research Assistant');
+    assert.equal(zh.wizard.templates.research, '\u7814\u7A76\u52A9\u624B');
+
+    assert.equal(en.wizard.templates.feishuOps, 'Feishu Ops');
+    assert.equal(zh.wizard.templates.feishuOps, '\u98DE\u4E66\u8FD0\u8425');
+
+    assert.equal(en.wizard.templates.content, 'Content Creator');
+    assert.equal(zh.wizard.templates.content, '\u5185\u5BB9\u521B\u4F5C');
+
+    assert.equal(en.wizard.templates.custom, 'Start from Scratch');
+    assert.equal(zh.wizard.templates.custom, '\u4ECE\u96F6\u5F00\u59CB');
+});
+
+test('i18n has success screen keys in both languages', () => {
+    const zh = JSON.parse(readFile(zhI18nPath));
+    const en = JSON.parse(readFile(enI18nPath));
+
+    assert.match(en.wizard.success.title, /\{\{name\}\}/);
+    assert.match(zh.wizard.success.title, /\{\{name\}\}/);
+    assert.equal(en.wizard.success.startChat, 'Start chatting');
+    assert.equal(zh.wizard.success.startChat, '\u5F00\u59CB\u5BF9\u8BDD');
+    assert.equal(en.wizard.success.connectChannel, 'Connect a channel');
+    assert.equal(zh.wizard.success.connectChannel, '\u8FDE\u63A5\u901A\u4FE1\u6E20\u9053');
+});
+
+test('i18n has abilities step keys in both languages', () => {
+    const zh = JSON.parse(readFile(zhI18nPath));
+    const en = JSON.parse(readFile(enI18nPath));
+
+    assert.ok(en.wizard.abilities.title);
+    assert.ok(zh.wizard.abilities.title);
+    assert.ok(en.wizard.abilities.recommendedBadge);
+    assert.ok(zh.wizard.abilities.recommendedBadge);
+    assert.ok(en.wizard.abilities.approvalHint);
+    assert.ok(zh.wizard.abilities.approvalHint);
+});
+
+test('i18n removed legacy wizard sections', () => {
+    const zhSource = readFile(zhI18nPath);
+    const enSource = readFile(enI18nPath);
+
+    // No step5 blocks
+    assert.equal((zhSource.match(/"step5":\s*\{/g) || []).length, 0);
+    assert.equal((enSource.match(/"step5":\s*\{/g) || []).length, 0);
+
+    // stepChannel only retains partialFailure (used by AgentDetail), no wizard-step keys
+    const zh = JSON.parse(zhSource);
+    const en = JSON.parse(enSource);
+    assert.equal(en.wizard.stepChannel?.title, undefined);
+    assert.equal(zh.wizard.stepChannel?.title, undefined);
+    assert.ok(en.wizard.stepChannel?.partialFailure);
+    assert.ok(zh.wizard.stepChannel?.partialFailure);
+    // stepReview fully removed
+    assert.equal(zh.wizard.stepReview, undefined);
+    assert.equal(en.wizard.stepReview, undefined);
 });

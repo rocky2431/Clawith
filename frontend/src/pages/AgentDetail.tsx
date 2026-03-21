@@ -11,7 +11,6 @@ import MarkdownRenderer from '../components/MarkdownRenderer';
 import PromptModal from '../components/PromptModal';
 import { applyStreamEvent, hydrateTimelineMessage, type TimelineMessage } from '../lib/chatParts.ts';
 import { activityApi, agentApi, capabilityApi, channelApi, enterpriseApi, fileApi, packApi, scheduleApi, skillApi, taskApi, triggerApi, uploadFileWithProgress } from '../services/api';
-import CapabilityPackCard from '../components/CapabilityPackCard';
 import { useAuthStore } from '../stores';
 
 const TABS = ['chat', 'overview', 'skills', 'activity', 'settings'] as const;
@@ -123,97 +122,59 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
         return <div style={{ color: 'var(--text-tertiary)', padding: '20px' }}>{t('common.loading')}</div>;
     }
 
-    const { kernel_tools, available_packs, channel_backed_packs, skill_declared_packs, capability_policies } = capSummary;
+    const { kernel_tools, available_packs, channel_backed_packs, skill_declared_packs } = capSummary;
     const allPacks = [...available_packs, ...channel_backed_packs];
+    const capabilityNameMap: Record<string, string> = {
+        web_pack: t('agent.capability.research'),
+        feishu_pack: t('agent.capability.feishu'),
+        plaza_pack: t('agent.capability.collaboration'),
+        mcp_admin_pack: t('agent.capability.mcpAdmin'),
+    };
+    const sourceLabel = (source?: string) => {
+        switch (source) {
+            case 'channel':
+                return t('agent.capability.channelSource');
+            case 'mcp':
+                return t('agent.capability.mcpSource');
+            case 'skill':
+                return t('agent.capability.skillSource');
+            default:
+                return t('agent.capability.systemSource');
+        }
+    };
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Section 1: Kernel Tools */}
-            <div>
-                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.kernel')}</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
-                    {t('enterprise.packs.kernelDesc')}
-                </p>
-                <div
-                    style={{
-                        background: 'var(--bg-tertiary)',
-                        borderRadius: '8px',
-                        padding: '12px 14px',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '6px',
-                    }}
-                >
-                    {kernel_tools.map((name: string) => (
-                        <span
-                            key={name}
-                            style={{
-                                fontSize: '11px',
-                                padding: '3px 10px',
-                                borderRadius: '4px',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-secondary)',
-                                fontFamily: 'var(--font-mono)',
-                                border: '1px solid var(--border-subtle)',
-                            }}
-                        >
-                            {name}
-                        </span>
-                    ))}
-                    {kernel_tools.length === 0 && (
-                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('common.noData')}</span>
-                    )}
+            <div className="card" style={{ padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{t('agent.capability.foundationTitle')}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.capability.foundationDesc')}</div>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
+                        {t('agent.capability.foundationCount', { count: kernel_tools.length })}
+                    </div>
                 </div>
             </div>
 
-            {/* Section 2: Capability Packs */}
             <div>
-                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.capabilityPacks')}</h3>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('agent.capability.sections.skills')}</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
-                    {t('enterprise.packs.description')}
-                </p>
-                {allPacks.length > 0 ? (
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                            gap: '10px',
-                        }}
-                    >
-                        {allPacks.map((pack: any) => (
-                            <CapabilityPackCard
-                                key={pack.name}
-                                pack={pack}
-                                policies={capability_policies}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="card" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                        {t('common.noData')}
-                    </div>
-                )}
-            </div>
-
-            {/* Section 3: Skill packs */}
-            <div>
-                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.skillDeclaredPacks')}</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
-                    {t('enterprise.packs.skillDeclaredPacksDesc')}
+                    {t('agent.capability.skillsHint')}
                 </p>
                 {skill_declared_packs && skill_declared_packs.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
                         {skill_declared_packs.map((pack: any) => (
                             <div key={pack.name} className="card" style={{ padding: '14px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{pack.name}</div>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{pack.source || t('enterprise.packs.skillSourceFallback')}</span>
+                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{(pack.skills || []).join(' · ') || capabilityNameMap[pack.name] || pack.name}</div>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{t('agent.capability.skillSource')}</span>
                                 </div>
                                 {pack.summary ? (
                                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{pack.summary}</div>
                                 ) : null}
                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                                    {t('enterprise.packs.skillsLabel')}: {(pack.skills || []).join(', ') || '—'}
+                                    {t('agent.capability.connectedActions', { count: (pack.tools || []).length })}
                                 </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                     {(pack.tools || []).map((tool: string) => (
@@ -236,12 +197,55 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                     </div>
                 ) : (
                     <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                        {t('enterprise.packs.noSkillDeclaredPacks')}
+                        {t('agent.capability.skillsEmpty')}
                     </div>
                 )}
             </div>
 
-            {/* Section 4: Session Activations (collapsible) */}
+            <div>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('agent.capability.sections.tools')}</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
+                    {allPacks.length > 0
+                        ? t('agent.capability.connectedSummary', { count: allPacks.length })
+                        : t('agent.capability.connectedEmpty')}
+                </p>
+                {allPacks.length > 0 ? (
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                            gap: '10px',
+                        }}
+                    >
+                        {allPacks.map((pack: any) => (
+                            <div key={pack.name} className="card" style={{ padding: '14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{capabilityNameMap[pack.name] || pack.summary || pack.name}</div>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{sourceLabel(pack.source)}</span>
+                                </div>
+                                {pack.summary ? (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{pack.summary}</div>
+                                ) : null}
+                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                                    {t('agent.capability.connectedActions', { count: (pack.tools || []).length })}
+                                </div>
+                                {pack.capabilities && pack.capabilities.length > 0 ? (
+                                    <div style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.20)', borderRadius: '6px', padding: '6px 8px' }}>
+                                        {t('enterprise.importedTools.restricted')}: {pack.capabilities.join(', ')}
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t('enterprise.importedTools.unrestricted')}</div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                        {t('agent.capability.connectedEmpty')}
+                    </div>
+                )}
+            </div>
+
             <details
                 className="card"
                 open={sessionExpanded}
@@ -260,11 +264,11 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                     }}
                 >
                     <span style={{ transition: 'transform 0.15s', display: 'inline-block', transform: sessionExpanded ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>&#x25B6;</span>
-                    {t('enterprise.packs.sessionActivations')}
+                    {t('agent.capability.sections.advanced')}
                 </summary>
                 {!latestSessionId ? (
                     <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
-                        {t('enterprise.packs.noSessionActivations')}
+                        {t('agent.capability.advancedNone')}
                     </p>
                 ) : runtimeLoading || !runtimeSummary ? (
                     <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
@@ -272,6 +276,9 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                     </p>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: 0 }}>
+                            {t('agent.capability.advancedDesc')}
+                        </p>
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.activatedPacks')}</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -296,7 +303,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                         </div>
 
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.usedTools')}</div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('agent.capability.recentTools')}</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                 {runtimeSummary.used_tools.length > 0 ? runtimeSummary.used_tools.map((tool: string) => (
                                     <span
@@ -321,7 +328,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
 
                         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                             <div style={{ minWidth: '180px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.blockedCapabilities')}</div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('agent.capability.recentBlocks')}</div>
                                 {runtimeSummary.blocked_capabilities.length > 0 ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         {runtimeSummary.blocked_capabilities.map((item: any, index: number) => (
@@ -349,7 +356,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                             </div>
 
                             <div style={{ minWidth: '180px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.compactions')}</div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('agent.capability.recentCompactions')}</div>
                                 <div
                                     style={{
                                         padding: '10px 12px',
@@ -2211,60 +2218,95 @@ function AgentDetailInner() {
                             upload: (file, path, onProgress) => fileApi.upload(id!, file, path, onProgress),
                             downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                         };
+                        const installedSkillFolders = skillFiles.filter((item: any) => item.is_dir);
+                        const installedSkillFiles = skillFiles.filter((item: any) => !item.is_dir);
                         return (
                             <div>
-                                <div style={{ marginBottom: '16px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div>
-                                            <h3 style={{ marginBottom: '4px' }}>{t('agent.skills.title')}</h3>
-                                            <p style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>{t('agent.skills.description')}</p>
+                                <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                                        <div style={{ maxWidth: '720px' }}>
+                                            <h3 style={{ marginBottom: '4px' }}>{t('agent.capability.title')}</h3>
+                                            <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('agent.capability.description')}</p>
+                                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                                <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-secondary)', minWidth: '180px' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{t('agent.capability.sections.skills')}</div>
+                                                    <div style={{ fontSize: '18px', fontWeight: 700 }}>{installedSkillFolders.length + installedSkillFiles.length}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{t('agent.capability.skillsSummary', { count: installedSkillFolders.length + installedSkillFiles.length })}</div>
+                                                </div>
+                                                <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-secondary)', minWidth: '220px' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{t('agent.capability.sections.tools')}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{t('agent.capability.connectedEmpty')}</div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                             <button
                                                 className="btn btn-secondary"
                                                 style={{ fontSize: '13px' }}
                                                 onClick={() => { setShowAgentUrlImport(true); setAgentUrlInput(''); }}
                                             >
-                                                Import from URL
+                                                {t('agent.capability.skillsUrl')}
                                             </button>
                                             <button
                                                 className="btn btn-secondary"
                                                 style={{ fontSize: '13px' }}
                                                 onClick={() => { setShowAgentClawhub(true); setAgentClawhubQuery(''); setAgentClawhubResults([]); }}
                                             >
-                                                Browse ClawHub
+                                                {t('agent.capability.skillsLibrary')}
                                             </button>
                                             <button
                                                 className="btn btn-primary"
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
                                                 onClick={() => setShowImportSkillModal(true)}
                                             >
-                                                Import from Presets
+                                                {t('agent.capability.skillsPreset')}
                                             </button>
                                         </div>
                                     </div>
-                                    <div style={{ marginTop: '8px', padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                        <strong>Skill Format:</strong><br />
-                                        • <code>skills/my-skill/SKILL.md</code> — {t('agent.skills.folderFormat', 'Each skill is a folder with a SKILL.md file and optional auxiliary files (scripts/, examples/)')}
-                                    </div>
                                 </div>
-                                <FileBrowser api={adapter} rootPath="skills" features={{ newFile: true, edit: true, delete: true, newFolder: true, upload: true, directoryNavigation: true }} title={t('agent.skills.skillFiles')} />
+
+                                <div style={{ marginBottom: '24px' }}>
+                                    <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('agent.capability.sections.skills')}</h3>
+                                    <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('agent.capability.skillsHint')}</p>
+                                    {installedSkillFolders.length + installedSkillFiles.length > 0 ? (
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                                            {installedSkillFolders.map((item: any) => (
+                                                <div key={item.path} className="card" style={{ padding: '14px' }}>
+                                                    <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{item.name}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('agent.skills.folderFormat')}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{item.path}</div>
+                                                </div>
+                                            ))}
+                                            {installedSkillFiles.map((item: any) => (
+                                                <div key={item.path} className="card" style={{ padding: '14px' }}>
+                                                    <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{item.name}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('agent.skills.flatFormat')}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{item.path}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                                            {t('agent.capability.skillsEmpty')}
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Browse ClawHub Modal */}
                                 {showAgentClawhub && (
                                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAgentClawhub(false)}>
                                         <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '600px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3>Browse ClawHub</h3>
+                                                <h3>{t('agent.capability.skillsLibrary')}</h3>
                                                 <button onClick={() => setShowAgentClawhub(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
                                             </div>
                                             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-                                                Search and install skills from ClawHub directly into this agent's workspace.
+                                                {t('agent.capability.skillsHint')}
                                             </p>
                                             <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                                                 <input
                                                     className="input"
-                                                    placeholder="Search skills..."
+                                                    placeholder={t('common.search')}
                                                     value={agentClawhubQuery}
                                                     onChange={e => setAgentClawhubQuery(e.target.value)}
                                                     onKeyDown={e => {
@@ -2289,7 +2331,7 @@ function AgentDetailInner() {
                                             </div>
                                             <div style={{ flex: 1, overflowY: 'auto' }}>
                                                 {agentClawhubResults.length === 0 && !agentClawhubSearching && (
-                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)', fontSize: '13px' }}>Search ClawHub to find skills</div>
+                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)', fontSize: '13px' }}>{t('agent.capability.skillsHint')}</div>
                                                 )}
                                                 {agentClawhubResults.map((r: any) => (
                                                     <div key={r.slug} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', marginBottom: '6px', border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
@@ -2314,7 +2356,7 @@ function AgentDetailInner() {
                                                                 }
                                                             }}
                                                         >
-                                                            {agentClawhubInstalling === r.slug ? 'Installing...' : 'Install'}
+                                                            {agentClawhubInstalling === r.slug ? '安装中...' : '安装'}
                                                         </button>
                                                     </div>
                                                 ))}
@@ -2328,11 +2370,11 @@ function AgentDetailInner() {
                                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAgentUrlImport(false)}>
                                         <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3>Import from GitHub URL</h3>
+                                                <h3>{t('agent.capability.skillsUrl')}</h3>
                                                 <button onClick={() => setShowAgentUrlImport(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>x</button>
                                             </div>
                                             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-                                                Paste a GitHub URL pointing to a skill directory (must contain SKILL.md).
+                                                {t('agent.capability.filesHint')}
                                             </p>
                                             <input
                                                 className="input"
@@ -2360,7 +2402,7 @@ function AgentDetailInner() {
                                                         }
                                                     }}
                                                 >
-                                                    {agentUrlImporting ? 'Importing...' : 'Import'}
+                                                    {agentUrlImporting ? '导入中...' : '导入'}
                                                 </button>
                                             </div>
                                         </div>
@@ -2372,17 +2414,17 @@ function AgentDetailInner() {
                                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowImportSkillModal(false)}>
                                         <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', maxWidth: '600px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3>📦 {t('agent.skills.importPreset', 'Import from Presets')}</h3>
+                                                <h3>📦 {t('agent.capability.skillsPreset')}</h3>
                                                 <button onClick={() => setShowImportSkillModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px' }}>✕</button>
                                             </div>
                                             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 16px' }}>
-                                                {t('agent.skills.importDesc', 'Select a preset skill to import into this agent. All skill files will be copied to the agent\'s skills folder.')}
+                                                选择一个内置技能模板导入到当前数字员工，相关技能文件会自动复制到该数字员工的技能目录。
                                             </p>
                                             <div style={{ flex: 1, overflowY: 'auto' }}>
                                                 {!globalSkillsForImport ? (
                                                     <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>Loading...</div>
                                                 ) : globalSkillsForImport.length === 0 ? (
-                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>No preset skills available</div>
+                                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>当前没有可导入的内置技能模板</div>
                                                 ) : (
                                                     globalSkillsForImport.map((skill: any) => (
                                                         <div
@@ -2427,7 +2469,7 @@ function AgentDetailInner() {
                                                                     }
                                                                 }}
                                                             >
-                                                                {importingSkillId === skill.id ? '⏳ ...' : '⬇️ Import'}
+                                                                {importingSkillId === skill.id ? '⏳ 导入中...' : '⬇️ 导入'}
                                                             </button>
                                                         </div>
                                                     ))
@@ -2436,11 +2478,22 @@ function AgentDetailInner() {
                                         </div>
                                     </div>
                                 )}
-                                {/* Section 2: External tools (capabilities) */}
+                                {/* Section 2: Imported tools and connections */}
                                 <div style={{ marginTop: '32px' }}>
-                                    <h3 style={{ marginBottom: '12px', fontSize: '14px' }}>{t('agent.tabs.capabilities', 'External Tools')}</h3>
+                                    <h3 style={{ marginBottom: '12px', fontSize: '14px' }}>{t('agent.capability.sections.tools')}</h3>
                                     <CapabilitiesView agentId={id!} canManage={canManage} />
                                 </div>
+
+                                <details className="card" style={{ marginTop: '24px' }}>
+                                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>&#x25B6;</span>
+                                        {t('agent.capability.sections.skillFiles')}
+                                    </summary>
+                                    <div style={{ marginTop: '12px' }}>
+                                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>{t('agent.capability.filesHint')}</p>
+                                        <FileBrowser api={adapter} rootPath="skills" features={{ newFile: true, edit: true, delete: true, newFolder: true, upload: true, directoryNavigation: true }} title={t('agent.skills.skillFiles')} />
+                                    </div>
+                                </details>
 
                                 {/* Section 3: Personality & Memory (collapsible) */}
                                 {(() => {

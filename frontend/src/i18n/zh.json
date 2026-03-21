@@ -152,18 +152,20 @@
       "disconnected": "已断开"
     },
     "tabs": {
+      "chat": "对话",
+      "overview": "概览",
+      "skills": "能力",
+      "activity": "动态",
+      "approvals": "审批",
+      "settings": "设置",
       "status": "状态",
       "tasks": "任务",
       "aware": "自我意识",
       "mind": "心智",
       "capabilities": "能力",
-      "skills": "技能",
       "relationships": "关系",
       "workspace": "工作区",
-      "chat": "聊天",
-      "activityLog": "工作日志",
-      "approvals": "审批",
-      "settings": "设置"
+      "activityLog": "工作日志"
     },
     "fields": {
       "name": "名称",
@@ -270,6 +272,43 @@
       "toolName": "工具名称",
       "enabled": "已启用",
       "disabled": "已禁用"
+    },
+    "capability": {
+      "title": "能力与工作方式",
+      "description": "技能决定数字员工怎么工作，导入工具决定它能连接哪些外部能力。系统基础能力会自动提供，无需单独配置。",
+      "sections": {
+        "skills": "技能与工作方式",
+        "tools": "导入工具与连接",
+        "advanced": "高级运行记录",
+        "skillFiles": "管理技能文件"
+      },
+      "skillsEmpty": "当前还没有自定义技能，先从模板开始即可。",
+      "skillsSummary": "{{count}} 个技能已安装",
+      "skillsHint": "你可以给数字员工安装专项技能，系统会自动按技能启用对应能力。",
+      "skillsLibrary": "从技能库导入",
+      "skillsPreset": "使用内置模板",
+      "skillsUrl": "从链接导入",
+      "filesHint": "需要更深度编辑时，再进入技能文件视图。",
+      "foundationTitle": "系统基础能力",
+      "foundationDesc": "系统已经内置对话、文件处理、技能加载等基础能力。",
+      "foundationCount": "已内置 {{count}} 项基础能力",
+      "connectedEmpty": "当前还没有额外连接。接入飞书或导入工具后，会在这里显示。",
+      "connectedSummary": "{{count}} 个能力来源已接入",
+      "connectedSource": "来源：{{source}}",
+      "connectedActions": "{{count}} 个可用动作",
+      "advancedDesc": "这里会显示最近一次会话真实激活的能力和被限制的操作，适合排查运行结果时查看。",
+      "advancedNone": "最近还没有足够的运行记录。",
+      "recentTools": "最近使用的工具",
+      "recentBlocks": "最近被拦截的操作",
+      "recentCompactions": "上下文压缩次数",
+      "systemSource": "系统自动提供",
+      "channelSource": "渠道连接",
+      "mcpSource": "导入工具",
+      "skillSource": "技能带来",
+      "collaboration": "共享广场",
+      "research": "网页研究",
+      "feishu": "飞书协作",
+      "mcpAdmin": "导入工具管理"
     },
     "workspace": {
       "title": "工作区",
@@ -588,7 +627,6 @@
       "sso": "SSO",
       "capabilities": "操作权限",
       "onboarding": "引导",
-      "packs": "工具包",
       "mcp": "导入工具"
     },
     "groups": {
@@ -854,6 +892,31 @@
       "requiresChannel": "需要渠道配置",
       "noCapabilityRestriction": "无限制",
       "restricted": "受治理限制"
+    },
+    "importedTools": {
+      "title": "导入工具",
+      "description": "通过外部连接为数字员工增加能力。系统扩展会自动启用，外部工具可以按公司统一接入。",
+      "connectTitle": "添加外部工具",
+      "connectDesc": "支持通过工具源 ID 或直接连接地址导入外部工具，导入后公司内的数字员工即可按需使用。",
+      "smitheryId": "工具源 ID",
+      "directUrl": "直接连接地址",
+      "displayName": "显示名称",
+      "apiKey": "访问密钥（可选）",
+      "importAction": "导入工具",
+      "installedTitle": "已连接的外部工具",
+      "installedEmpty": "还没有导入任何外部工具。",
+      "installedSummary": "{{toolCount}} 个工具 · {{agentCount}} 个数字员工使用中",
+      "systemExtensionsTitle": "系统扩展",
+      "systemExtensionsDesc": "这些扩展由平台、渠道或技能自动提供。你可以在这里统一启用或停用。",
+      "systemExtensionsToggle": "查看系统扩展",
+      "enable": "启用",
+      "disable": "停用",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "source": "来源",
+      "actions": "可用动作",
+      "restricted": "受权限约束",
+      "unrestricted": "默认可用"
     }
   },
   "common": {

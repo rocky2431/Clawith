@@ -9,19 +9,20 @@ const enI18nPath = path.resolve(process.cwd(), 'src/i18n/en.json');
 
 const read = (filePath: string) => fs.readFileSync(filePath, 'utf8');
 
-test('EnterpriseSettings removes legacy tools tab in favor of packs and capabilities', () => {
+test('EnterpriseSettings uses grouped sidebar navigation with a consolidated AI tools area', () => {
     const source = read(enterpriseSettingsPath);
 
     assert.doesNotMatch(source, /activeTab === 'tools'/);
     assert.doesNotMatch(source, /useState<'llm' \| 'org' \| 'info' \| 'approvals' \| 'audit' \| 'tools'/);
     assert.doesNotMatch(source, /\['info', 'llm', 'tools', 'packs'/);
-    assert.match(source, /\['info', 'llm', 'packs', 'mcp', 'skills'/);
-    assert.match(source, /activeTab === 'packs'/);
+    assert.match(source, /\{ key: 'ai', tabs: \['llm', 'skills', 'mcp', 'memory'\] \}/);
+    assert.doesNotMatch(source, /activeTab === 'packs'/);
     assert.match(source, /activeTab === 'mcp'/);
     assert.match(source, /activeTab === 'capabilities'/);
+    assert.match(source, /SIDEBAR_GROUPS/);
 });
 
-test('EnterpriseSettings removes legacy tool management state and loaders', () => {
+test('EnterpriseSettings keeps backend pack controls but hides raw pack and MCP engineering language from the main view', () => {
     const source = read(enterpriseSettingsPath);
 
     assert.doesNotMatch(source, /const \[allTools, setAllTools\]/);
@@ -34,16 +35,20 @@ test('EnterpriseSettings removes legacy tool management state and loaders', () =
     assert.match(source, /packApi\.mcpRegistry/);
     assert.match(source, /packApi\.importMcp/);
     assert.match(source, /packApi\.deleteMcp/);
+    assert.doesNotMatch(source, /MCP Registry/);
+    assert.doesNotMatch(source, /pack \{server\.pack_name\}/);
 });
 
-test('enterprise i18n removes the tools tab label', () => {
+test('enterprise i18n uses business-facing AI capability language', () => {
     const zh = JSON.parse(read(zhI18nPath));
     const en = JSON.parse(read(enI18nPath));
 
     assert.equal(zh.enterprise.tabs.tools, undefined);
     assert.equal(en.enterprise.tabs.tools, undefined);
-    assert.equal(zh.enterprise.tabs.packs, '能力包');
-    assert.equal(en.enterprise.tabs.packs, 'Packs');
+    assert.equal(zh.enterprise.tabs.mcp, '导入工具');
+    assert.equal(en.enterprise.tabs.mcp, 'Imported Tools');
+    assert.equal(zh.enterprise.groups.ai, 'AI 能力');
+    assert.equal(en.enterprise.groups.ai, 'AI Capabilities');
     assert.equal(zh.agent.tools?.platformTools, undefined);
     assert.equal(en.agent.tools?.platformTools, undefined);
 });
