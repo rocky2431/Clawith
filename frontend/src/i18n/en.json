@@ -246,6 +246,11 @@
       "mcp": "Imported Tools",
       "knowledge": "Knowledge Base"
     },
+    "mcp": {
+      "description": "Connect external tools and data sources. Use tool_search in chat to discover tools, or add manually.",
+      "empty": "No external tools connected",
+      "emptyHint": "Use tool_search in chat to discover and install tools, or import MCP servers in Company Settings."
+    },
     "foundation": {
       "title": "Built-in Capabilities",
       "description": "Every digital employee has these capabilities by default.",

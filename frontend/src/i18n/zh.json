@@ -257,6 +257,11 @@
       "mcp": "导入工具",
       "knowledge": "知识库"
     },
+    "mcp": {
+      "description": "连接外部工具和数据源。在对话中使用 tool_search 发现工具，或手动添加。",
+      "empty": "暂无已连接的外部工具",
+      "emptyHint": "在对话中使用 tool_search 发现并安装工具，或在公司设置中导入 MCP 服务器。"
+    },
     "foundation": {
       "title": "基础能力",
       "description": "每个数字员工都自带以下基础能力，无需配置。",
