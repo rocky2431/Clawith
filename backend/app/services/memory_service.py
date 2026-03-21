@@ -19,7 +19,7 @@ from pathlib import Path
 
 from app.config import get_settings
 from app.database import async_session
-from app.memory import FileBackedMemoryStore
+from app.memory import FileBackedMemoryStore, MemoryAssembler, MemoryRetriever
 from app.models.chat_session import ChatSession
 from app.models.llm import LLMModel
 from app.models.tenant_setting import TenantSetting
@@ -49,8 +49,29 @@ async def build_memory_context(
     tenant_id: uuid.UUID,
     *,
     session_id: str | None = None,
+    query: str = "",
 ) -> str:
-    """Build a self-consistent memory context for any runtime entrypoint."""
+    """Build a self-consistent memory context for any runtime entrypoint.
+
+    Uses the four-layer retrieval pipeline (working, episodic, semantic, external)
+    followed by the assembler. Falls back to FileBackedMemoryStore on failure.
+    """
+    try:
+        retriever = MemoryRetriever(data_root=Path(get_settings().AGENT_DATA_DIR))
+        items = await retriever.retrieve(
+            agent_id,
+            query,
+            session_id,
+            str(tenant_id) if tenant_id else None,
+        )
+        assembler = MemoryAssembler()
+        result = assembler.assemble(items)
+        if result:
+            return result
+    except Exception as exc:
+        logger.warning("Retrieval pipeline failed, falling back to FileBackedMemoryStore: %s", exc)
+
+    # Fallback: original FileBackedMemoryStore
     store = FileBackedMemoryStore(
         data_root=Path(get_settings().AGENT_DATA_DIR),
         load_session_summary=_load_session_summary,

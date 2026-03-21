@@ -42,7 +42,8 @@ async def test_prompt_builder_merges_agent_context_knowledge_memory_and_suffix(m
         ),
     )
 
-    assert prompt == "BASE_PROMPT\n\nKNOWLEDGE\n\nMEMORY\n\nSUFFIX"
+    # Memory is in frozen prefix (before knowledge); knowledge + suffix are in dynamic suffix
+    assert prompt == "BASE_PROMPT\n\nMEMORY\n\nKNOWLEDGE\n\nSUFFIX"
 
 
 @pytest.mark.asyncio

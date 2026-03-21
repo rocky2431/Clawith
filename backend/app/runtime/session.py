@@ -13,3 +13,6 @@ class SessionContext:
     channel: str | None = None
     active_packs: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Prompt cache: frozen prefix reused within the same session
+    prompt_prefix: str | None = None
+    prompt_fingerprint: str | None = None

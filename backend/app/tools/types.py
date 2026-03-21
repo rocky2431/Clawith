@@ -15,6 +15,8 @@ class ToolDefinition:
     parameters: dict[str, Any]
     category: str
     raw_schema: dict[str, Any]
+    read_only: bool = False
+    parallel_safe: bool = False
 
     @classmethod
     def from_openai_tool(cls, tool: dict[str, Any], category: str) -> "ToolDefinition":

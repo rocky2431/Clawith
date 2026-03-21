@@ -2012,3 +2012,47 @@ async def chat_stream(
         }
     finally:
         await client.close()
+
+
+# ── Prompt Cache Hints ──────────────────────────────────────────
+
+
+def apply_prompt_cache_hints(messages: list[LLMMessage], provider: str) -> list[LLMMessage]:
+    """Inject provider-specific cache control hints into messages.
+
+    For Anthropic: adds cache_control breakpoints at the system message
+    and the last 3 user/assistant messages to enable prefix caching (~75% cost reduction).
+
+    For other providers: returns messages unchanged (no-op).
+    """
+    if "anthropic" not in provider.lower() and "claude" not in provider.lower():
+        return messages
+
+    result = list(messages)
+
+    # Mark system message with cache_control
+    for i, msg in enumerate(result):
+        if msg.role == "system" and msg.content and isinstance(msg.content, str):
+            result[i] = LLMMessage(
+                role=msg.role,
+                content=[{"type": "text", "text": msg.content, "cache_control": {"type": "ephemeral"}}],
+                tool_calls=msg.tool_calls,
+                tool_call_id=msg.tool_call_id,
+                reasoning_content=msg.reasoning_content,
+            )
+            break
+
+    # Mark last 3 non-system messages with cache_control
+    non_system_indices = [i for i, m in enumerate(result) if m.role != "system"]
+    for idx in non_system_indices[-3:]:
+        msg = result[idx]
+        if msg.content and isinstance(msg.content, str):
+            result[idx] = LLMMessage(
+                role=msg.role,
+                content=[{"type": "text", "text": msg.content, "cache_control": {"type": "ephemeral"}}],
+                tool_calls=msg.tool_calls,
+                tool_call_id=msg.tool_call_id,
+                reasoning_content=msg.reasoning_content,
+            )
+
+    return result

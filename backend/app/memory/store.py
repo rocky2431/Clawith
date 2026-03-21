@@ -53,6 +53,25 @@ class FileBackedMemoryStore:
 
         return "\n\n".join(parts)
 
+    async def build_session_snapshot(
+        self,
+        *,
+        agent_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        session_id: str | None = None,
+    ) -> str:
+        """Build a frozen memory snapshot for session-start prompt caching.
+
+        This is called ONCE at session start. The result is cached in
+        SessionContext.prompt_prefix and NOT rebuilt mid-session.
+        Mid-session memory writes go to disk but don't affect this snapshot.
+        """
+        return await self.build_context(
+            agent_id=agent_id,
+            tenant_id=tenant_id,
+            session_id=session_id,
+        )
+
     def _load_agent_memory(self, agent_id: uuid.UUID) -> str:
         memory_file = self.data_root / str(agent_id) / "memory" / "memory.json"
         if not memory_file.exists():

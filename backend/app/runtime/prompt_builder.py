@@ -1,10 +1,16 @@
-"""Prompt assembly helpers for the unified runtime."""
+"""Prompt assembly helpers for the unified runtime.
+
+Three-layer prompt architecture:
+  1. Frozen Prefix — stable within a session (identity, soul, skills catalog, memory snapshot)
+  2. Dynamic Suffix — changes per round (active packs, retrieval, compaction hints)
+  3. Per-turn Messages — normal conversation messages
+"""
 
 from __future__ import annotations
 
 import inspect
 import uuid
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from app.runtime.context import RuntimeContext
 from app.services.agent_context import build_agent_context
@@ -21,22 +27,87 @@ async def _maybe_await(value):
     return value
 
 
-def _render_active_packs(runtime_context: RuntimeContext | None) -> str:
-    if not runtime_context or not runtime_context.session.active_packs:
-        return ""
+# ── Frozen Prefix (session-stable) ──────────────────────────────
 
+
+def build_frozen_prompt_prefix(
+    *,
+    agent_context: str,
+    memory_snapshot: str = "",
+    skill_catalog: str = "",
+) -> str:
+    """Build the session-stable prompt prefix.
+
+    Contains: agent identity/soul/role, kernel tools catalog,
+    skill catalog, and session-start memory snapshot.
+    These do NOT change within a single session.
+    """
+    parts = [agent_context]
+    if memory_snapshot:
+        parts.append(memory_snapshot)
+    if skill_catalog:
+        parts.append(skill_catalog)
+    return "\n\n".join(parts)
+
+
+# ── Dynamic Suffix (per-round) ──────────────────────────────────
+
+
+def _render_active_packs(active_packs: list[dict[str, Any]]) -> str:
+    if not active_packs:
+        return ""
     lines = [
         "## Active Capability Packs",
         "These capability packs are already active for the current invocation. Use them directly when relevant.",
         "",
     ]
-    for pack in runtime_context.session.active_packs:
+    for pack in active_packs:
         tools = ", ".join(pack.get("tools", []))
         summary = pack.get("summary", "")
         lines.append(f"- {pack.get('name', 'unknown_pack')}: {summary}")
         if tools:
             lines.append(f"  Tools: {tools}")
     return "\n".join(lines)
+
+
+def build_dynamic_prompt_suffix(
+    *,
+    active_packs: list[dict[str, Any]] | None = None,
+    retrieval_context: str = "",
+    system_prompt_suffix: str = "",
+) -> str:
+    """Build the per-round dynamic suffix.
+
+    Contains: active capability packs, knowledge retrieval results,
+    compaction hints, and request-specific suffix.
+    These CAN change between rounds within the same session.
+    """
+    parts: list[str] = []
+
+    packs_section = _render_active_packs(active_packs or [])
+    if packs_section:
+        parts.append(packs_section)
+
+    if retrieval_context:
+        parts.append(retrieval_context)
+
+    if system_prompt_suffix:
+        parts.append(system_prompt_suffix)
+
+    return "\n\n".join(parts)
+
+
+# ── Assembly ────────────────────────────────────────────────────
+
+
+def assemble_runtime_prompt(frozen_prefix: str, dynamic_suffix: str) -> str:
+    """Combine frozen prefix + dynamic suffix into final system prompt."""
+    if dynamic_suffix:
+        return f"{frozen_prefix}\n\n{dynamic_suffix}"
+    return frozen_prefix
+
+
+# ── Legacy-compatible full builder (used by invoker.py) ─────────
 
 
 async def build_runtime_prompt(
@@ -53,19 +124,28 @@ async def build_runtime_prompt(
     build_agent_context_fn: BuildAgentContextFn | None = None,
     fetch_relevant_knowledge_fn: KnowledgeLookupFn | None = None,
 ) -> str:
-    """Assemble the runtime system prompt from stable building blocks."""
+    """Assemble the runtime system prompt from stable building blocks.
+
+    Legacy-compatible entry point. Internally uses the frozen/dynamic split
+    but does not cache — caching is managed by the kernel via SessionContext.
+    """
     build_context = build_agent_context_fn or build_agent_context
     fetch_knowledge = fetch_relevant_knowledge_fn or fetch_relevant_knowledge
 
-    prompt_parts: list[str] = [
-        await build_context(
-            agent_id,
-            agent_name,
-            role_description,
-            current_user_name=current_user_name,
-        )
-    ]
+    agent_context = await build_context(
+        agent_id,
+        agent_name,
+        role_description,
+        current_user_name=current_user_name,
+    )
 
+    # Build frozen prefix
+    frozen = build_frozen_prompt_prefix(
+        agent_context=agent_context,
+        memory_snapshot=memory_context,
+    )
+
+    # Build dynamic suffix
     last_user_msg = next(
         (
             message["content"]
@@ -74,19 +154,20 @@ async def build_runtime_prompt(
         ),
         None,
     )
+    retrieval = ""
     if agent_id and last_user_msg:
         knowledge = await _maybe_await(fetch_knowledge(last_user_msg, tenant_id))
         if knowledge:
-            prompt_parts.append(knowledge)
+            retrieval = knowledge
 
-    if memory_context:
-        prompt_parts.append(memory_context)
+    active_packs = []
+    if runtime_context and runtime_context.session.active_packs:
+        active_packs = runtime_context.session.active_packs
 
-    active_packs_section = _render_active_packs(runtime_context)
-    if active_packs_section:
-        prompt_parts.append(active_packs_section)
+    dynamic = build_dynamic_prompt_suffix(
+        active_packs=active_packs,
+        retrieval_context=retrieval,
+        system_prompt_suffix=system_prompt_suffix,
+    )
 
-    if system_prompt_suffix:
-        prompt_parts.append(system_prompt_suffix)
-
-    return "\n\n".join(part for part in prompt_parts if part)
+    return assemble_runtime_prompt(frozen, dynamic)

@@ -24,6 +24,18 @@ _SCHEDULED = {"set_trigger", "update_trigger", "cancel_trigger", "list_triggers"
 _CHANNEL = {"send_feishu_message", "send_web_message", "send_message_to_agent", "send_channel_file"}
 _WEB = {"jina_search", "jina_read", "web_search"}
 
+_PARALLEL_SAFE_TOOLS = {
+    "read_file",
+    "glob_search",
+    "grep_search",
+    "read_document",
+    "list_files",
+    "list_triggers",
+    "web_search",
+    "jina_search",
+    "jina_read",
+}
+
 
 def infer_category(tool_name: str) -> str:
     if tool_name in _FILE_SYSTEM:
@@ -53,7 +65,11 @@ class ToolRegistry:
             name = fn.get("name")
             if not name:
                 continue
-            registry.register(ToolDefinition.from_openai_tool(tool, category=infer_category(name)))
+            td = ToolDefinition.from_openai_tool(tool, category=infer_category(name))
+            is_parallel = name in _PARALLEL_SAFE_TOOLS
+            td.read_only = is_parallel
+            td.parallel_safe = is_parallel
+            registry.register(td)
         return registry
 
     def register(self, tool: ToolDefinition) -> None:
@@ -67,6 +83,14 @@ class ToolRegistry:
 
     def values(self) -> list[ToolDefinition]:
         return list(self._tools.values())
+
+    def is_parallel_safe(self, name: str) -> bool:
+        tool = self._tools.get(name)
+        return tool.parallel_safe if tool else False
+
+    def is_read_only(self, name: str) -> bool:
+        tool = self._tools.get(name)
+        return tool.read_only if tool else False
 
     def to_openai_tools(self, names: list[str] | None = None) -> list[dict]:
         if names is None:

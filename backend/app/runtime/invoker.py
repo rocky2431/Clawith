@@ -16,7 +16,14 @@ from typing import Any, Awaitable, Callable
 from sqlalchemy import select
 
 from app.database import async_session
-from app.kernel import AgentKernel, ExecutionIdentityRef, InvocationRequest, KernelDependencies, RuntimeConfig, ToolExpansionResult
+from app.kernel import (
+    AgentKernel,
+    ExecutionIdentityRef,
+    InvocationRequest,
+    KernelDependencies,
+    RuntimeConfig,
+    ToolExpansionResult,
+)
 from app.models.agent import Agent
 from app.models.user import User
 from app.runtime.context import RuntimeContext
@@ -26,6 +33,7 @@ from app.skills import SkillParser, SkillRegistry, WorkspaceSkillLoader
 from app.services.agent_context import build_agent_context
 from app.services.agent_tools import AGENT_TOOLS, CORE_TOOL_NAMES, execute_tool, get_agent_tools_for_llm
 from app.services.knowledge_inject import fetch_relevant_knowledge
+from app.services.llm_client import apply_prompt_cache_hints
 from app.services.llm_utils import LLMMessage, create_llm_client, get_max_tokens
 from app.services.memory_service import (
     build_memory_context,
@@ -169,6 +177,11 @@ def _apply_vision_transform(api_messages: list[LLMMessage], supports_vision: boo
     return api_messages
 
 
+def _apply_cache_hints(api_messages: list[LLMMessage], provider: str) -> list[LLMMessage]:
+    """Apply provider-specific prompt cache hints (e.g., Anthropic prefix caching)."""
+    return apply_prompt_cache_hints(api_messages, provider)
+
+
 async def _build_system_prompt(
     request: AgentInvocationRequest,
     tenant_id: uuid.UUID | None,
@@ -254,11 +267,7 @@ def _infer_active_packs(
     declared_pack_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     requested = set(tool_names)
-    packs = [
-        _serialize_pack(pack)
-        for pack in TOOL_PACKS
-        if requested.intersection(pack.tools)
-    ]
+    packs = [_serialize_pack(pack) for pack in TOOL_PACKS if requested.intersection(pack.tools)]
     existing_names = {pack["name"] for pack in packs}
     for pack_name in declared_pack_names or []:
         if pack_name in existing_names:
@@ -270,14 +279,16 @@ def _infer_active_packs(
     if packs or not requested:
         return packs
     synthetic_name = f"skill:{(skill_name or 'custom').strip().lower().replace(' ', '_')}"
-    return [{
-        "name": synthetic_name,
-        "summary": f"Tools activated by skill {skill_name or 'custom skill'}",
-        "source": "skill",
-        "activation_mode": "通过 load_skill 激活",
-        "tools": sorted(requested),
-        "skill_name": skill_name,
-    }]
+    return [
+        {
+            "name": synthetic_name,
+            "summary": f"Tools activated by skill {skill_name or 'custom skill'}",
+            "source": "skill",
+            "activation_mode": "通过 load_skill 激活",
+            "tools": sorted(requested),
+            "skill_name": skill_name,
+        }
+    ]
 
 
 async def _resolve_tool_expansion(
@@ -480,6 +491,7 @@ def get_agent_kernel() -> AgentKernel:
             extract_usage_tokens=extract_usage_tokens,
             estimate_tokens_from_chars=estimate_tokens_from_chars,
             apply_vision_transform=_apply_vision_transform,
+            apply_cache_hints=_apply_cache_hints,
         )
     )
 

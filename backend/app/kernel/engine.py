@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -46,6 +47,7 @@ GetMaxTokens = Callable[[str, str, int | None], int]
 ExtractUsageTokens = Callable[[dict | None], int | None]
 EstimateTokensFromChars = Callable[[int], int]
 ApplyVisionTransform = Callable[[list[LLMMessage], bool], list[LLMMessage]]
+ApplyCacheHints = Callable[[list[LLMMessage], str], list[LLMMessage]]
 
 
 @dataclass(slots=True)
@@ -65,6 +67,7 @@ class KernelDependencies:
     estimate_tokens_from_chars: EstimateTokensFromChars
     resolve_tool_expansion: ResolveToolExpansion | None = None
     apply_vision_transform: ApplyVisionTransform | None = None
+    apply_cache_hints: ApplyCacheHints | None = None
 
 
 @dataclass(slots=True)
@@ -87,7 +90,9 @@ def _build_persisted_memory_messages(request: InvocationRequest, final_content: 
     return base_messages
 
 
-def _build_error_result(message: str, *, tokens_used: int = 0, final_tools: list[dict] | None = None) -> InvocationResult:
+def _build_error_result(
+    message: str, *, tokens_used: int = 0, final_tools: list[dict] | None = None
+) -> InvocationResult:
     return InvocationResult(
         content=message,
         tokens_used=tokens_used,
@@ -139,6 +144,23 @@ def _merge_active_packs(
     return new_packs
 
 
+_PARALLEL_SAFE_TOOLS = frozenset({
+    "read_file", "glob_search", "grep_search", "read_document",
+    "list_files", "list_triggers", "web_search", "jina_search", "jina_read",
+})
+
+_PARALLEL_SEMAPHORE_LIMIT = 4
+
+
+def _can_parallelize_batch(tool_calls: list[dict]) -> bool:
+    """Check if all tool calls in a batch can run in parallel."""
+    for tc in tool_calls:
+        name = tc["function"]["name"]
+        if name not in _PARALLEL_SAFE_TOOLS:
+            return False
+    return True
+
+
 class AgentKernel:
     """Single runtime kernel for all agent invocations."""
 
@@ -164,21 +186,52 @@ class AgentKernel:
                 self._deps.resolve_memory_context(request, runtime_config.tenant_id)
             )
             current_user_name = await _maybe_await(self._deps.resolve_current_user_name(request.user_id))
-            system_prompt = await _maybe_await(
-                self._deps.build_system_prompt(
-                    request,
-                    runtime_config.tenant_id,
-                    resolved_memory_context,
-                    current_user_name,
+
+            # Prompt cache: reuse frozen prefix from session if available
+            from app.runtime.prompt_builder import assemble_runtime_prompt, build_dynamic_prompt_suffix
+
+            session_ctx = request.session_context
+            if session_ctx and session_ctx.prompt_prefix:
+                # Session already has a frozen prefix — only rebuild dynamic suffix
+
+                dynamic_suffix = build_dynamic_prompt_suffix(
+                    active_packs=session_ctx.active_packs if session_ctx else [],
+                    retrieval_context=resolved_memory_context,
+                    system_prompt_suffix=request.system_prompt_suffix,
                 )
-            )
+                system_prompt = assemble_runtime_prompt(session_ctx.prompt_prefix, dynamic_suffix)
+            else:
+                # First call in session: build full prompt, then extract frozen prefix
+                full_prompt = await _maybe_await(
+                    self._deps.build_system_prompt(
+                        request,
+                        runtime_config.tenant_id,
+                        resolved_memory_context,
+                        current_user_name,
+                    )
+                )
+                # Cache only the frozen prefix (full prompt minus dynamic suffix)
+                # so subsequent rounds don't duplicate dynamic content
+                dynamic_suffix = build_dynamic_prompt_suffix(
+                    active_packs=session_ctx.active_packs if session_ctx else [],
+                    retrieval_context=resolved_memory_context,
+                    system_prompt_suffix=request.system_prompt_suffix,
+                )
+                if session_ctx is not None and dynamic_suffix:
+                    # Strip trailing dynamic suffix to get pure frozen prefix
+                    frozen = full_prompt
+                    suffix_pos = full_prompt.rfind(dynamic_suffix)
+                    if suffix_pos > 0:
+                        frozen = full_prompt[:suffix_pos].rstrip()
+                    session_ctx.prompt_prefix = frozen
+                elif session_ctx is not None:
+                    session_ctx.prompt_prefix = full_prompt
+                system_prompt = full_prompt
 
             tools_for_llm = request.initial_tools
             if tools_for_llm is None:
                 if request.agent_id:
-                    tools_for_llm = await _maybe_await(
-                        self._deps.get_tools(request.agent_id, request.core_tools_only)
-                    )
+                    tools_for_llm = await _maybe_await(self._deps.get_tools(request.agent_id, request.core_tools_only))
                 else:
                     tools_for_llm = []
 
@@ -257,9 +310,16 @@ class AgentKernel:
                             )
                         )
 
+                    # Apply provider-specific cache hints (e.g., Anthropic prefix caching)
+                    stream_messages = api_messages
+                    if self._deps.apply_cache_hints:
+                        stream_messages = self._deps.apply_cache_hints(
+                            api_messages, getattr(request.model, "provider", "")
+                        )
+
                     try:
                         response = await client.stream(
-                            messages=api_messages,
+                            messages=stream_messages,
                             tools=tools_for_llm if tools_for_llm else None,
                             temperature=0.7,
                             max_tokens=max_tokens,
@@ -297,10 +357,9 @@ class AgentKernel:
                     if real_tokens:
                         accumulated_tokens += real_tokens
                     else:
-                        round_chars = (
-                            sum(len(m.content or "") if isinstance(m.content, str) else 0 for m in api_messages)
-                            + len(response.content or "")
-                        )
+                        round_chars = sum(
+                            len(m.content or "") if isinstance(m.content, str) else 0 for m in api_messages
+                        ) + len(response.content or "")
                         accumulated_tokens += self._deps.estimate_tokens_from_chars(round_chars)
 
                     if not response.tool_calls:
@@ -316,14 +375,17 @@ class AgentKernel:
                                     )
                                 )
                             except Exception as exc:
-                                logger.warning("[Kernel] Failed to persist memory for agent %s: %s", request.agent_id, exc)
+                                logger.warning(
+                                    "[Kernel] Failed to persist memory for agent %s: %s", request.agent_id, exc
+                                )
                         if request.agent_id and accumulated_tokens > 0:
                             await _maybe_await(self._deps.record_token_usage(request.agent_id, accumulated_tokens))
                         return InvocationResult(
                             content=final_content,
                             tokens_used=accumulated_tokens,
                             final_tools=tools_for_llm,
-                            parts=collected_parts + build_done_event(
+                            parts=collected_parts
+                            + build_done_event(
                                 final_content,
                                 thinking=response.reasoning_content,
                             )["parts"],
@@ -333,17 +395,22 @@ class AgentKernel:
                         LLMMessage(
                             role="assistant",
                             content=response.content or None,
-                            tool_calls=[{
-                                "id": tc["id"],
-                                "type": "function",
-                                "function": tc["function"],
-                            } for tc in response.tool_calls],
+                            tool_calls=[
+                                {
+                                    "id": tc["id"],
+                                    "type": "function",
+                                    "function": tc["function"],
+                                }
+                                for tc in response.tool_calls
+                            ],
                             reasoning_content=response.reasoning_content,
                         )
                     )
 
                     full_reasoning_content = response.reasoning_content or ""
 
+                    # Parse all tool calls upfront
+                    parsed_tool_calls: list[tuple[dict, str, dict]] = []
                     for tc in response.tool_calls:
                         fn = tc["function"]
                         tool_name = fn["name"]
@@ -352,76 +419,128 @@ class AgentKernel:
                             args = json.loads(raw_args) if raw_args else {}
                         except json.JSONDecodeError:
                             args = {}
+                        parsed_tool_calls.append((tc, tool_name, args))
 
-                        running_payload = {
-                            "name": tool_name,
-                            "args": args,
-                            "status": "running",
-                            "reasoning_content": full_reasoning_content,
-                        }
-                        if request.on_tool_call:
-                            await _maybe_await(request.on_tool_call(running_payload))
+                    if len(parsed_tool_calls) > 1 and _can_parallelize_batch(response.tool_calls):
+                        # --- Parallel execution for read-only tools ---
 
-                        result = await _maybe_await(
-                            self._deps.execute_tool(tool_name, args, request, _emit_event)
+                        # 1. Emit all "running" events
+                        for _tc, tool_name, args in parsed_tool_calls:
+                            running_payload = {
+                                "name": tool_name,
+                                "args": args,
+                                "status": "running",
+                                "reasoning_content": full_reasoning_content,
+                            }
+                            if request.on_tool_call:
+                                await _maybe_await(request.on_tool_call(running_payload))
+
+                        # 2. Execute all tools concurrently via asyncio.gather
+                        sem = asyncio.Semaphore(_PARALLEL_SEMAPHORE_LIMIT)
+
+                        async def _run_tool(t_name: str, t_args: dict) -> str:
+                            async with sem:
+                                return await _maybe_await(
+                                    self._deps.execute_tool(t_name, t_args, request, _emit_event)
+                                )
+
+                        results = await asyncio.gather(
+                            *[_run_tool(t_name, t_args) for _, t_name, t_args in parsed_tool_calls]
                         )
 
-                        if request.expand_tools and request.agent_id and full_toolset is None:
-                            if _should_expand_tools(tool_name, args):
-                                expansion_payload: ToolExpansionResult | list[dict] | None = None
-                                if self._deps.resolve_tool_expansion:
-                                    expansion_payload = await _maybe_await(
-                                        self._deps.resolve_tool_expansion(request, tool_name, args)
-                                    )
-                                if isinstance(expansion_payload, ToolExpansionResult):
-                                    full_toolset = expansion_payload.tools
-                                    session_context = request.session_context
-                                    if session_context is None:
-                                        session_context = request.session_context = SessionContext()
-                                    new_packs = _merge_active_packs(session_context, expansion_payload.active_packs)
-                                    if new_packs:
-                                        event_payload = expansion_payload.event_payload or {
-                                            "type": "pack_activation",
-                                            "packs": new_packs,
-                                            "message": "Activated capability packs for this task.",
-                                            "status": "info",
-                                        }
-                                        await _emit_event(event_payload)
-                                        system_prompt = await _maybe_await(
-                                            self._deps.build_system_prompt(
-                                                request,
-                                                runtime_config.tenant_id,
-                                                resolved_memory_context,
-                                                current_user_name,
-                                            )
-                                        )
-                                        api_messages[0] = LLMMessage(role="system", content=system_prompt)
-                                elif isinstance(expansion_payload, list):
-                                    full_toolset = expansion_payload
-                                if full_toolset is None:
-                                    full_toolset = await _maybe_await(
-                                        self._deps.get_tools(request.agent_id, False)
-                                    )
-                                tools_for_llm = full_toolset
-
-                        done_payload = {
-                            "name": tool_name,
-                            "args": args,
-                            "status": "done",
-                            "result": result,
-                            "reasoning_content": full_reasoning_content,
-                        }
-                        if request.on_tool_call:
-                            await _maybe_await(request.on_tool_call(done_payload))
-                        collected_parts.append(build_tool_call_event(done_payload)["part"])
-
-                        api_messages.append(
-                            LLMMessage(
-                                role="tool",
-                                tool_call_id=tc["id"],
-                                content=str(result),
+                        # 3. Emit "done" events and append tool results in original order
+                        for (tc, tool_name, args), result in zip(parsed_tool_calls, results):
+                            done_payload = {
+                                "name": tool_name,
+                                "args": args,
+                                "status": "done",
+                                "result": result,
+                                "reasoning_content": full_reasoning_content,
+                            }
+                            if request.on_tool_call:
+                                await _maybe_await(request.on_tool_call(done_payload))
+                            collected_parts.append(build_tool_call_event(done_payload)["part"])
+                            api_messages.append(
+                                LLMMessage(
+                                    role="tool",
+                                    tool_call_id=tc["id"],
+                                    content=str(result),
+                                )
                             )
-                        )
+                    else:
+                        # --- Sequential execution (original logic) ---
+                        for tc, tool_name, args in parsed_tool_calls:
+                            running_payload = {
+                                "name": tool_name,
+                                "args": args,
+                                "status": "running",
+                                "reasoning_content": full_reasoning_content,
+                            }
+                            if request.on_tool_call:
+                                await _maybe_await(request.on_tool_call(running_payload))
+
+                            result = await _maybe_await(
+                                self._deps.execute_tool(tool_name, args, request, _emit_event)
+                            )
+
+                            if request.expand_tools and request.agent_id and full_toolset is None:
+                                if _should_expand_tools(tool_name, args):
+                                    expansion_payload: ToolExpansionResult | list[dict] | None = None
+                                    if self._deps.resolve_tool_expansion:
+                                        expansion_payload = await _maybe_await(
+                                            self._deps.resolve_tool_expansion(request, tool_name, args)
+                                        )
+                                    if isinstance(expansion_payload, ToolExpansionResult):
+                                        full_toolset = expansion_payload.tools
+                                        session_context = request.session_context
+                                        if session_context is None:
+                                            session_context = request.session_context = SessionContext()
+                                        new_packs = _merge_active_packs(
+                                            session_context, expansion_payload.active_packs
+                                        )
+                                        if new_packs:
+                                            event_payload = expansion_payload.event_payload or {
+                                                "type": "pack_activation",
+                                                "packs": new_packs,
+                                                "message": "Activated capability packs for this task.",
+                                                "status": "info",
+                                            }
+                                            await _emit_event(event_payload)
+                                            system_prompt = await _maybe_await(
+                                                self._deps.build_system_prompt(
+                                                    request,
+                                                    runtime_config.tenant_id,
+                                                    resolved_memory_context,
+                                                    current_user_name,
+                                                )
+                                            )
+                                            api_messages[0] = LLMMessage(role="system", content=system_prompt)
+                                    elif isinstance(expansion_payload, list):
+                                        full_toolset = expansion_payload
+                                    if full_toolset is None:
+                                        full_toolset = await _maybe_await(
+                                            self._deps.get_tools(request.agent_id, False)
+                                        )
+                                    tools_for_llm = full_toolset
+
+                            done_payload = {
+                                "name": tool_name,
+                                "args": args,
+                                "status": "done",
+                                "result": result,
+                                "reasoning_content": full_reasoning_content,
+                            }
+                            if request.on_tool_call:
+                                await _maybe_await(request.on_tool_call(done_payload))
+                            collected_parts.append(build_tool_call_event(done_payload)["part"])
+
+                            api_messages.append(
+                                LLMMessage(
+                                    role="tool",
+                                    tool_call_id=tc["id"],
+                                    content=str(result),
+                                )
+                            )
 
                 if request.agent_id and accumulated_tokens > 0:
                     await _maybe_await(self._deps.record_token_usage(request.agent_id, accumulated_tokens))
