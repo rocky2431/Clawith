@@ -1,348 +1,26 @@
 """Seed builtin skills into the global skill registry."""
 
+import shutil
+from pathlib import Path
+
 from loguru import logger
 from sqlalchemy import select
+
 from app.database import async_session
 from app.models.skill import Skill, SkillFile
 
 
+RETIRED_BUILTIN_SKILL_FOLDERS = {
+    "web-research",
+    "data-analysis",
+    "content-writing",
+    "competitive-analysis",
+    "meeting-notes",
+    "content-research-writer",
+}
+
+
 BUILTIN_SKILLS = [
-    {
-        "name": "Web Research",
-        "description": "Systematic web searching, source evaluation, and information synthesis",
-        "category": "research",
-        "icon": "🔍",
-        "folder_name": "web-research",
-        "files": [
-            {
-                "path": "SKILL.md",
-                "content": """---
-name: Web Research
-description: Systematic web searching, source evaluation, and information synthesis
----
-
-# Web Research
-
-## Overview
-Use this skill when you need to find, evaluate, and synthesize information from the web.
-
-**Keywords**: web search, information retrieval, source evaluation, fact-checking, research
-
-## Process
-
-### 1. Define Search Strategy
-- Identify key search terms and variations
-- Consider different angles and perspectives
-- Plan multiple search queries
-
-### 2. Evaluate Sources
-- Check source credibility and recency
-- Cross-reference claims across multiple sources
-- Note publication dates and author expertise
-
-### 3. Synthesize Findings
-- Organize information by theme or relevance
-- Highlight key findings and consensus views
-- Note conflicting information and gaps
-
-## Output Format
-- Start with a brief summary of findings
-- Provide detailed sections with source citations
-- End with confidence assessment and limitations
-""",
-            },
-            {
-                "path": "scripts/search_helper.py",
-                "content": (
-                    "#!/usr/bin/env python3\n"
-                    '"""Helper utilities for structured web search."""\n\n'
-                    "from datetime import datetime\n\n\n"
-                    "def format_search_results(results: list[dict]) -> str:\n"
-                    '    """Format raw search results into a structured report."""\n'
-                    "    output = []\n"
-                    "    for i, r in enumerate(results, 1):\n"
-                    "        title = r.get('title', 'Untitled')\n"
-                    "        url = r.get('url', '#')\n"
-                    "        snippet = r.get('snippet', 'No description')\n"
-                    "        output.append(f'{i}. [{title}]({url})')\n"
-                    "        output.append(f'   {snippet}')\n"
-                    "        output.append('')\n"
-                    "    return '\\n'.join(output)\n\n\n"
-                    "def assess_source_credibility(url: str) -> dict:\n"
-                    '    """Basic heuristics for source credibility."""\n'
-                    "    trusted = ['.edu', '.gov', '.org', 'arxiv.org', 'nature.com']\n"
-                    "    score = 0.5\n"
-                    "    for d in trusted:\n"
-                    "        if d in url:\n"
-                    "            score = 0.8\n"
-                    "            break\n"
-                    "    return {'url': url, 'credibility_score': score,\n"
-                    "            'assessed_at': datetime.now().isoformat()}\n"
-                ),
-            },
-        ],
-    },
-    {
-        "name": "Data Analysis",
-        "description": "Data interpretation, pattern recognition, and structured reporting",
-        "category": "analysis",
-        "icon": "📊",
-        "folder_name": "data-analysis",
-        "files": [
-            {
-                "path": "SKILL.md",
-                "content": """---
-name: Data Analysis
-description: Data interpretation, pattern recognition, and structured reporting
----
-
-# Data Analysis
-
-## Overview
-Use this skill for analyzing data, identifying patterns, and creating structured reports.
-
-**Keywords**: data analysis, statistics, trends, visualization, reporting
-
-## Process
-
-### 1. Data Understanding
-- Identify data types, ranges, and distributions
-- Check for missing values and anomalies
-- Understand the business context
-
-### 2. Analysis Methods
-- Descriptive statistics (mean, median, distribution)
-- Trend analysis (time-series patterns)
-- Comparative analysis (benchmarking, A/B)
-- Correlation and relationship discovery
-
-### 3. Reporting
-- Lead with key insights and actionable findings
-- Use tables and structured formats for clarity
-- Include methodology notes for reproducibility
-
-## Output Format
-- Executive summary with top 3 findings
-- Detailed analysis with supporting data
-- Recommendations based on findings
-""",
-            },
-            {
-                "path": "scripts/analyze_csv.py",
-                "content": (
-                    "#!/usr/bin/env python3\n"
-                    '"""Utility for quick CSV data analysis."""\n\n'
-                    "import csv\nimport statistics\nfrom collections import Counter\n\n\n"
-                    "def analyze_column(data: list[dict], column: str) -> dict:\n"
-                    '    """Analyze a single column from CSV data."""\n'
-                    "    values = [row.get(column) for row in data if row.get(column) is not None]\n"
-                    "    if not values:\n"
-                    '        return {"column": column, "count": 0, "error": "No data"}\n\n'
-                    '    result = {"column": column, "count": len(values), "unique": len(set(values))}\n\n'
-                    "    # Try numeric analysis\n"
-                    "    try:\n"
-                    "        nums = [float(v) for v in values]\n"
-                    "        result.update({\n"
-                    '            "type": "numeric",\n'
-                    '            "min": min(nums), "max": max(nums),\n'
-                    '            "mean": round(statistics.mean(nums), 2),\n'
-                    '            "median": round(statistics.median(nums), 2),\n'
-                    "        })\n"
-                    "    except (ValueError, TypeError):\n"
-                    "        freq = Counter(values).most_common(5)\n"
-                    '        result.update({"type": "categorical", "top_values": freq})\n\n'
-                    "    return result\n\n\n"
-                    "def quick_summary(filepath: str) -> str:\n"
-                    '    """Generate a quick summary of a CSV file."""\n'
-                    "    with open(filepath, 'r') as f:\n"
-                    "        reader = csv.DictReader(f)\n"
-                    "        data = list(reader)\n"
-                    "    columns = data[0].keys() if data else []\n"
-                    "    return f'Rows: {len(data)}, Columns: {len(columns)}'\n"
-                ),
-            },
-            {
-                "path": "examples/sample_report.md",
-                "content": """# Sample Analysis Report
-
-## Executive Summary
-Analysis of Q4 2024 sales data reveals a 12% increase in total revenue,
-driven primarily by the Enterprise segment (+23%).
-
-## Key Findings
-1. **Revenue Growth**: Total revenue increased from $2.1M to $2.35M
-2. **Top Segment**: Enterprise accounts grew 23% QoQ
-3. **Churn**: SMB churn rate decreased from 5.2% to 4.1%
-
-## Detailed Analysis
-
-| Metric | Q3 2024 | Q4 2024 | Change |
-|--------|---------|---------|--------|
-| Total Revenue | $2.1M | $2.35M | +12% |
-| Enterprise | $1.2M | $1.47M | +23% |
-| SMB | $0.9M | $0.88M | -2% |
-| Churn Rate | 5.2% | 4.1% | -1.1pp |
-
-## Recommendations
-1. Increase investment in Enterprise sales team
-2. Investigate SMB revenue decline
-3. Continue churn reduction initiatives
-""",
-            },
-        ],
-    },
-    {
-        "name": "Content Writing",
-        "description": "Professional content creation, editing, and tone adaptation",
-        "category": "creation",
-        "icon": "✍️",
-        "folder_name": "content-writing",
-        "files": [
-            {
-                "path": "SKILL.md",
-                "content": """---
-name: Content Writing
-description: Professional content creation, editing, and tone adaptation
----
-
-# Content Writing
-
-## Overview
-Use this skill for creating, editing, and polishing written content across formats.
-
-**Keywords**: writing, editing, copywriting, tone, style, proofreading
-
-## Content Types
-- **Articles & Blog Posts**: Informative, engaging long-form content
-- **Business Communications**: Emails, memos, reports
-- **Marketing Copy**: Headlines, descriptions, calls-to-action
-- **Documentation**: Technical docs, guides, FAQs
-
-## Guidelines
-
-### Structure
-- Hook readers with a compelling opening
-- Use clear headings and logical flow
-- Keep paragraphs short (3-5 sentences)
-- End with a clear conclusion or call-to-action
-
-### Tone Adaptation
-- **Formal**: Business reports, official communications
-- **Professional**: Client-facing content, documentation
-- **Conversational**: Blog posts, social media
-- **Technical**: Developer docs, specifications
-
-### Quality Checklist
-- [ ] Clear main message
-- [ ] Consistent tone throughout
-- [ ] No grammatical errors
-- [ ] Appropriate length for format
-""",
-            },
-        ],
-    },
-    {
-        "name": "Competitive Analysis",
-        "description": "Market competitor research, comparison frameworks, and strategic insights",
-        "category": "research",
-        "icon": "⚔️",
-        "folder_name": "competitive-analysis",
-        "files": [
-            {
-                "path": "SKILL.md",
-                "content": """---
-name: Competitive Analysis
-description: Market competitor research, comparison frameworks, and strategic insights
----
-
-# Competitive Analysis
-
-## Overview
-Use this skill for analyzing competitors, market positioning, and strategic opportunities.
-
-**Keywords**: competitors, market analysis, SWOT, positioning, benchmarking
-
-## Frameworks
-
-### SWOT Analysis
-| | Helpful | Harmful |
-|---|---|---|
-| **Internal** | Strengths | Weaknesses |
-| **External** | Opportunities | Threats |
-
-### Feature Comparison Matrix
-Compare products across key dimensions:
-- Core features and capabilities
-- Pricing and packaging
-- Target audience
-- Market positioning
-- Technology stack
-
-### Porter's Five Forces
-1. Competitive rivalry intensity
-2. Bargaining power of suppliers
-3. Bargaining power of buyers
-4. Threat of new entrants
-5. Threat of substitutes
-
-## Output Format
-- Competitor overview table
-- Detailed per-competitor analysis
-- Strategic recommendations
-- Key differentiators summary
-""",
-            },
-        ],
-    },
-    {
-        "name": "Meeting Notes",
-        "description": "Meeting summarization, action item extraction, and follow-up tracking",
-        "category": "productivity",
-        "icon": "📝",
-        "folder_name": "meeting-notes",
-        "files": [
-            {
-                "path": "SKILL.md",
-                "content": """---
-name: Meeting Notes
-description: Meeting summarization, action item extraction, and follow-up tracking
----
-
-# Meeting Notes
-
-## Overview
-Use this skill for processing meeting content into structured summaries with clear action items.
-
-**Keywords**: meetings, notes, action items, decisions, follow-up
-
-## Template
-
-### Meeting Summary
-```
-Meeting: [Title]
-Date: [Date]
-Participants: [Names]
-Duration: [Time]
-```
-
-### Key Decisions
-- Numbered list of decisions made
-
-### Action Items
-| # | Action | Owner | Due Date | Status |
-|---|--------|-------|----------|--------|
-| 1 | [Task] | [Name] | [Date] | ⬜ Pending |
-
-### Discussion Points
-Brief summary of main topics discussed
-
-### Next Steps
-- Follow-up meeting date
-- Items deferred to next meeting
-""",
-            },
-        ],
-    },
     {
         "name": "Complex Task Executor",
         "description": "Structured methodology for decomposing, planning, and executing complex multi-step tasks with progress tracking",
@@ -540,15 +218,6 @@ Plan would be:
         "is_default": True,
         "files": [],  # populated at runtime from skill_creator_content
     },
-    # ─── Content Research Writer ──────────────────
-    {
-        "name": "Content Research Writer",
-        "description": "Assists in writing high-quality content by conducting research, adding citations, improving hooks, iterating on outlines, and providing real-time section feedback",
-        "category": "writing",
-        "icon": "✍️",
-        "folder_name": "content-research-writer",
-        "files": [],  # populated at runtime
-    },
     # ─── MCP Tool Installer (mandatory default) ──────────────
     {
         "name": "MCP Tool Installer",
@@ -621,20 +290,13 @@ Plan would be:
 async def seed_skills():
     """Insert builtin skills if they don't exist."""
     from app.services.skill_creator_content import get_skill_creator_files
-    from pathlib import Path as _Path
 
-    _files_dir = _Path(__file__).parent / "skill_creator_files"
-    _template_skills_dir = _Path(__file__).parent.parent.parent / "agent_template" / "skills"
+    _template_skills_dir = Path(__file__).parent.parent.parent / "agent_template" / "skills"
 
     # Populate skill-creator files at runtime
     for s in BUILTIN_SKILLS:
         if s["folder_name"] == "skill-creator" and not s["files"]:
             s["files"] = get_skill_creator_files()
-        elif s["folder_name"] == "content-research-writer" and not s["files"]:
-            # Load from downloaded file
-            crw_file = _files_dir / "content_research_writer__SKILL.md"
-            if crw_file.exists():
-                s["files"] = [{"path": "SKILL.md", "content": crw_file.read_text(encoding="utf-8")}]
         elif s["folder_name"] == "mcp-installer" and not s["files"]:
             mcp_file = _template_skills_dir / "MCP_INSTALLER.md"
             if mcp_file.exists():
@@ -647,7 +309,7 @@ async def seed_skills():
             "workspace-guide", "trigger-guide", "web-research-guide",
             "feishu-integration", "dingtalk-integration", "atlassian-rovo",
         ) and not s["files"]:
-            _sys_skills_dir = _Path(__file__).parent.parent / "templates" / "system_skills"
+            _sys_skills_dir = Path(__file__).parent.parent / "templates" / "system_skills"
             skill_md = _sys_skills_dir / s["folder_name"] / "SKILL.md"
             if skill_md.exists():
                 s["files"] = [{"path": "SKILL.md", "content": skill_md.read_text(encoding="utf-8")}]
@@ -702,6 +364,76 @@ async def seed_skills():
                 logger.info(f"[SkillSeeder] Created skill: {skill_data['name']}")
         await db.commit()
         logger.info("[SkillSeeder] Skills seeded")
+
+
+def remove_retired_builtin_skill_dirs(
+    agent_dir: Path,
+    retired_folders: set[str] | frozenset[str] = RETIRED_BUILTIN_SKILL_FOLDERS,
+) -> list[str]:
+    """Remove retired builtin skill folders from an agent workspace."""
+    skills_dir = agent_dir / "skills"
+    if not skills_dir.exists():
+        return []
+
+    removed: list[str] = []
+    for folder_name in sorted(retired_folders):
+        target = skills_dir / folder_name
+        if not target.exists():
+            continue
+        shutil.rmtree(target)
+        removed.append(folder_name)
+    return removed
+
+
+async def cleanup_retired_builtin_skills() -> dict:
+    """Delete retired builtin skills from DB and existing agent workspaces."""
+    from app.models.agent import Agent
+    from app.services.agent_manager import agent_manager
+
+    removed_skill_rows: list[str] = []
+    cleaned_agent_dirs: dict[str, list[str]] = {}
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(Skill).where(
+                Skill.is_builtin == True,  # noqa: E712
+                Skill.folder_name.in_(sorted(RETIRED_BUILTIN_SKILL_FOLDERS)),
+            )
+        )
+        retired_skills = result.scalars().all()
+
+        for skill in retired_skills:
+            if skill.folder_name not in RETIRED_BUILTIN_SKILL_FOLDERS:
+                continue
+            removed_skill_rows.append(skill.folder_name)
+            await db.delete(skill)
+
+        agents_result = await db.execute(select(Agent))
+        agents = agents_result.scalars().all()
+
+        if retired_skills:
+            await db.commit()
+
+    for agent in agents:
+        removed = remove_retired_builtin_skill_dirs(agent_manager._agent_dir(agent.id))
+        if removed:
+            cleaned_agent_dirs[str(agent.id)] = removed
+
+    if removed_skill_rows:
+        logger.info(
+            "[SkillSeeder] Removed retired builtin skills: {}",
+            ", ".join(sorted(set(removed_skill_rows))),
+        )
+    if cleaned_agent_dirs:
+        logger.info(
+            "[SkillSeeder] Cleaned retired skill folders from {} agents",
+            len(cleaned_agent_dirs),
+        )
+
+    return {
+        "deleted_skills": sorted(set(removed_skill_rows)),
+        "cleaned_agent_dirs": cleaned_agent_dirs,
+    }
 
 
 async def push_default_skills_to_existing_agents():

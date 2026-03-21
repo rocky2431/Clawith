@@ -543,7 +543,7 @@
     "step2New": {
       "title": "Starter Capabilities",
       "description": "Select starter skills. The pack list below is a derived preview of what those skills can unlock later, not an always-on capability set.",
-      "kernelInfo": "Agents start with a stable kernel of primitives. Feishu, email, web, document, and MCP capabilities are loaded explicitly through skills or MCP.",
+      "kernelInfo": "Agents start with a stable kernel of primitives. Feishu, web, shared plaza, and MCP capabilities are loaded explicitly through skills, channels, or MCP.",
       "kernelTitle": "Kernel Tools",
       "starterPacksTitle": "Derived Capability Packs",
       "starterPacksDescription": "Selected skills declare the first wave of capability packs that can be activated on demand. They do not stay always-on until the matching skill is loaded.",

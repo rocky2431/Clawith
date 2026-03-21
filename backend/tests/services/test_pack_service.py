@@ -17,12 +17,15 @@ from app.skills.types import ParsedSkill, SkillMetadata
 
 def test_pack_catalog_returns_all_packs():
     catalog = get_pack_catalog()
-    assert len(catalog) >= 7
+    assert len(catalog) >= 4
     names = {p["name"] for p in catalog}
     assert "web_pack" in names
     assert "feishu_pack" in names
-    assert "email_pack" in names
+    assert "plaza_pack" in names
     assert "mcp_admin_pack" in names
+    assert "document_pack" not in names
+    assert "email_pack" not in names
+    assert "image_pack" not in names
 
 
 def test_pack_catalog_has_required_fields():
@@ -50,6 +53,23 @@ def test_pack_catalog_system_pack_no_channel_dependency():
     web = next(p for p in catalog if p["name"] == "web_pack")
     assert web["source"] == "system"
     assert web["requires_channel"] is None
+
+
+def test_plaza_pack_only_contains_real_shared_feed_tools():
+    catalog = get_pack_catalog()
+    plaza = next(p for p in catalog if p["name"] == "plaza_pack")
+
+    assert plaza["source"] == "system"
+    assert plaza["tools"] == [
+        "plaza_get_new_posts",
+        "plaza_create_post",
+        "plaza_add_comment",
+    ]
+    assert "manage_tasks" not in plaza["tools"]
+    assert "plaza_list_posts" not in plaza["tools"]
+    assert "plaza_get_comments" not in plaza["tools"]
+    assert "共享广场" in plaza["summary"]
+    assert "协作" in plaza["activation_mode"]
 
 
 def test_kernel_tools_are_strings():

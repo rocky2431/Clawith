@@ -554,7 +554,7 @@
     "step2New": {
       "title": "初始能力",
       "description": "选择初始 skills。下方展示的是这些 skills 会派生出的能力包预览，不代表它们会在创建后默认常驻。",
-      "kernelInfo": "数字员工默认拥有一组稳定的内核原语。飞书、邮件、网页、文档、MCP 等能力将通过 skill 或 MCP 按需接入。",
+      "kernelInfo": "数字员工默认拥有一组稳定的内核原语。飞书、网页、共享广场、MCP 等能力将通过 skill、渠道或 MCP 按需接入。",
       "kernelTitle": "内核工具",
       "starterPacksTitle": "派生能力包预览",
       "starterPacksDescription": "已选 skills 会声明首批可按需激活的能力包。它们不会默认常驻，只有在运行时加载对应 skill 后才会出现。",

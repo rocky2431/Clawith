@@ -77,3 +77,13 @@ test('agent create i18n keeps distinct channel/review sections without duplicate
     assert.equal(zh.wizard.stepReview.title, '确认创建');
     assert.equal(en.wizard.stepReview.title, 'Review & Create');
 });
+
+test('agent create kernel capability copy no longer presents email as a default pack track', () => {
+    const zh = JSON.parse(readFile(zhI18nPath));
+    const en = JSON.parse(readFile(enI18nPath));
+
+    assert.doesNotMatch(zh.wizard.step2New.kernelInfo, /邮件/);
+    assert.doesNotMatch(en.wizard.step2New.kernelInfo, /email/i);
+    assert.doesNotMatch(zh.wizard.step2New.kernelInfo, /文档/);
+    assert.doesNotMatch(en.wizard.step2New.kernelInfo, /document/i);
+});

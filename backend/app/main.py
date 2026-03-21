@@ -182,8 +182,13 @@ async def lifespan(app: FastAPI):
         logger.warning(f"[startup] Atlassian tools seed failed: {e}")
 
     try:
-        from app.services.skill_seeder import seed_skills, push_default_skills_to_existing_agents
+        from app.services.skill_seeder import (
+            cleanup_retired_builtin_skills,
+            push_default_skills_to_existing_agents,
+            seed_skills,
+        )
         await seed_skills()
+        await cleanup_retired_builtin_skills()
         await push_default_skills_to_existing_agents()
     except Exception as e:
         logger.warning(f"[startup] Skills seed failed: {e}")
