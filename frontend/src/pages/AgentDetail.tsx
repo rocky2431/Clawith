@@ -924,6 +924,91 @@ function RelationshipEditor({ agentId, readOnly = false }: { agentId: string; re
     );
 }
 
+function FileEditorCard({ agentId, path, title, readOnly = false }: { agentId: string; path: string; title: string; readOnly?: boolean }) {
+    const { t } = useTranslation();
+    const queryClient = useQueryClient();
+    const { data, isError, refetch } = useQuery({
+        queryKey: ['agent-file', agentId, path],
+        queryFn: () => fileApi.read(agentId, path).catch(() => null),
+        enabled: !!agentId,
+    });
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState('');
+    const [saving, setSaving] = useState(false);
+    const fileExists = data !== null && data !== undefined;
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await fileApi.write(agentId, path, draft);
+            queryClient.invalidateQueries({ queryKey: ['agent-file', agentId, path] });
+            setEditing(false);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCreate = async () => {
+        setSaving(true);
+        try {
+            await fileApi.write(agentId, path, '');
+            queryClient.invalidateQueries({ queryKey: ['agent-file', agentId, path] });
+            refetch();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 600 }}>{title}</h3>
+                {fileExists && !readOnly && !editing && (
+                    <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setDraft(data?.content || ''); setEditing(true); }}>
+                        {t('agent.overview.editFile')}
+                    </button>
+                )}
+                {editing && (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setEditing(false)}>
+                            {t('agent.overview.cancelEdit')}
+                        </button>
+                        <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saving} onClick={handleSave}>
+                            {saving ? t('agent.overview.saving') : t('agent.overview.saveFile')}
+                        </button>
+                    </div>
+                )}
+            </div>
+            {!fileExists && (isError || data === null) ? (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                    <div style={{ marginBottom: '8px' }}>{t('agent.overview.fileNotExists')}</div>
+                    {!readOnly && (
+                        <button className="btn btn-secondary" style={{ fontSize: '12px' }} disabled={saving} onClick={handleCreate}>
+                            {saving ? t('agent.overview.saving') : t('agent.overview.createFile')}
+                        </button>
+                    )}
+                </div>
+            ) : editing ? (
+                <textarea
+                    className="input"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    rows={10}
+                    style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }}
+                />
+            ) : (
+                <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+                    {data?.content ? (
+                        <MarkdownRenderer content={data.content} />
+                    ) : (
+                        <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{path}</span>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function AgentDetailInner() {
     const { t, i18n } = useTranslation();
     const { id } = useParams<{ id: string }>();
@@ -995,7 +1080,7 @@ function AgentDetailInner() {
     const [showCompletedFocus, setShowCompletedFocus] = useState(false);
     const [showAllTriggers, setShowAllTriggers] = useState(false);
     const [showAllReflections, setShowAllReflections] = useState(false);
-    const [skillSubTab, setSkillSubTab] = useState<'skills' | 'mcp' | 'memory' | 'knowledge' | 'foundation'>('skills');
+    const [skillSubTab, setSkillSubTab] = useState<'skills' | 'mcp' | 'knowledge'>('skills');
     const [reflectionPage, setReflectionPage] = useState(0);
     const REFLECTIONS_PAGE_SIZE = 10;
     const SECTION_PAGE_SIZE = 5;
@@ -1714,26 +1799,7 @@ function AgentDetailInner() {
         },
     });
 
-    // ─── Memory facts (skills/memory sub-tab) ────────────
-    const { data: memoryJsonContent } = useQuery({
-        queryKey: ['file', id, 'memory/memory.json'],
-        queryFn: () => fileApi.read(id!, 'memory/memory.json').catch(() => null),
-        enabled: !!id && activeTab === 'skills' && skillSubTab === 'memory',
-    });
-    const { data: memoryMdContent } = useQuery({
-        queryKey: ['file', id, 'memory/memory.md'],
-        queryFn: () => fileApi.read(id!, 'memory/memory.md').catch(() => null),
-        enabled: !!id && activeTab === 'skills' && skillSubTab === 'memory',
-    });
-    const [memoryMdEditing, setMemoryMdEditing] = useState(false);
-    const [memoryMdDraft, setMemoryMdDraft] = useState('');
-    const saveMemoryMd = useMutation({
-        mutationFn: () => fileApi.write(id!, 'memory/memory.md', memoryMdDraft),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['file', id, 'memory/memory.md'] });
-            setMemoryMdEditing(false);
-        },
-    });
+    // Memory sub-tab removed — memory.md is now edited via FileEditorCard in overview
 
 
     const CopyBtn = ({ url }: { url: string }) => (
@@ -1997,7 +2063,7 @@ function AgentDetailInner() {
                     ))}
                 </div>
 
-                {/* ── Overview Tab (redesigned: identity + tokens + soul.md + focus.md) ── */}
+                {/* ── Overview Tab (identity card + tokens + 5 MD file editors) ── */}
                 {activeTab === 'overview' && (() => {
                     const formatDate = (d: string) => {
                         try { return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return d; }
@@ -2041,88 +2107,17 @@ function AgentDetailInner() {
                                 </div>
                             </div>
 
-                            {/* soul.md editor */}
-                            <div className="card" style={{ marginBottom: '20px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600 }}>{t('agent.overview.personality')}</h3>
-                                    {canManage && !soulEditing && (
-                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setSoulDraft(soulContent?.content || ''); setSoulEditing(true); }}>
-                                            {t('agent.overview.editFile')}
-                                        </button>
-                                    )}
-                                    {soulEditing && (
-                                        <div style={{ display: 'flex', gap: '6px' }}>
-                                            <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setSoulEditing(false)}>
-                                                {t('agent.overview.cancelEdit')}
-                                            </button>
-                                            <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saveSoul.isPending} onClick={() => saveSoul.mutate()}>
-                                                {saveSoul.isPending ? t('agent.overview.saving') : t('agent.overview.saveFile')}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                                {soulEditing ? (
-                                    <textarea
-                                        className="input"
-                                        value={soulDraft}
-                                        onChange={e => setSoulDraft(e.target.value)}
-                                        rows={12}
-                                        style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }}
-                                    />
-                                ) : (
-                                    <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
-                                        {soulContent?.content ? (
-                                            <MarkdownRenderer content={soulContent.content} />
-                                        ) : (
-                                            <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>soul.md</span>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* focus.md editor */}
-                            <div className="card" style={{ marginBottom: '20px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600 }}>{t('agent.overview.workingOn')}</h3>
-                                    {canManage && !focusEditing && (
-                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setFocusDraft(focusFile?.content || ''); setFocusEditing(true); }}>
-                                            {t('agent.overview.editFile')}
-                                        </button>
-                                    )}
-                                    {focusEditing && (
-                                        <div style={{ display: 'flex', gap: '6px' }}>
-                                            <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setFocusEditing(false)}>
-                                                {t('agent.overview.cancelEdit')}
-                                            </button>
-                                            <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saveFocus.isPending} onClick={() => saveFocus.mutate()}>
-                                                {saveFocus.isPending ? t('agent.overview.saving') : t('agent.overview.saveFile')}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                                {focusEditing ? (
-                                    <textarea
-                                        className="input"
-                                        value={focusDraft}
-                                        onChange={e => setFocusDraft(e.target.value)}
-                                        rows={8}
-                                        style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }}
-                                    />
-                                ) : (
-                                    <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
-                                        {focusFile?.content ? (
-                                            <MarkdownRenderer content={focusFile.content} />
-                                        ) : (
-                                            <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{t('agent.overview.emptyFocus')}</span>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            {/* 5 MD file editor cards */}
+                            <FileEditorCard agentId={id!} path="soul.md" title={t('agent.overview.personality')} />
+                            <FileEditorCard agentId={id!} path="memory/memory.md" title={t('agent.overview.memory')} />
+                            <FileEditorCard agentId={id!} path="HEARTBEAT.md" title={t('agent.overview.heartbeat')} />
+                            <FileEditorCard agentId={id!} path="relationships.md" title={t('agent.overview.relationships')} />
+                            <FileEditorCard agentId={id!} path="memory/reflections.md" title={t('agent.overview.reflections')} readOnly />
                         </div>
                     );
                 })()}
 
-                {/* ── Skills Tab (5 sub-tabs: skills / mcp / memory / knowledge / foundation) ── */}
+                {/* ── Skills Tab (3 sub-tabs: skills / mcp / knowledge) ── */}
                 {
                     activeTab === 'skills' && (() => {
                         const adapter: FileBrowserApi = {
@@ -2133,33 +2128,19 @@ function AgentDetailInner() {
                             upload: (file, path, onProgress) => fileApi.upload(id!, file, path, onProgress),
                             downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                         };
-                        const installedSkillFolders = skillFiles.filter((item: any) => item.is_dir);
-                        const installedSkillFiles = skillFiles.filter((item: any) => !item.is_dir);
-
-                        const FOUNDATION_ITEMS = [
-                            { icon: '\uD83D\uDCC2', label: t('agent.foundation.fileIO'), desc: t('agent.foundation.fileIODesc') },
-                            { icon: '\uD83D\uDD0D', label: t('agent.foundation.search'), desc: t('agent.foundation.searchDesc') },
-                            { icon: '\uD83D\uDCDA', label: t('agent.foundation.skills'), desc: t('agent.foundation.skillsDesc') },
-                            { icon: '\u23F0', label: t('agent.foundation.triggers'), desc: t('agent.foundation.triggersDesc') },
-                            { icon: '\uD83D\uDCAC', label: t('agent.foundation.messaging'), desc: t('agent.foundation.messagingDesc') },
-                            { icon: '\uD83D\uDD27', label: t('agent.foundation.toolDiscovery'), desc: t('agent.foundation.toolDiscoveryDesc') },
-                        ];
-
-                        // Parse memory.json for facts
-                        let memoryFacts: string[] = [];
-                        if (memoryJsonContent?.content) {
-                            try {
-                                const parsed = JSON.parse(memoryJsonContent.content);
-                                if (Array.isArray(parsed)) memoryFacts = parsed.map(String);
-                                else if (parsed && typeof parsed === 'object') memoryFacts = Object.values(parsed).map(String);
-                            } catch { /* empty */ }
-                        }
+                        const allSkillItems = [...skillFiles];
+                        const [expandedSkill, setExpandedSkill] = React.useState<string | null>(null);
+                        const { data: expandedSkillContent } = useQuery({
+                            queryKey: ['skill-content', id, expandedSkill],
+                            queryFn: () => fileApi.read(id!, expandedSkill!),
+                            enabled: !!id && !!expandedSkill,
+                        });
 
                         return (
                             <div>
                                 {/* Sub-tab pill navigation */}
                                 <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: 'var(--bg-secondary)', padding: '4px', borderRadius: '8px' }}>
-                                    {(['skills', 'mcp', 'memory', 'knowledge', 'foundation'] as const).map(sub => (
+                                    {(['skills', 'mcp', 'knowledge'] as const).map(sub => (
                                         <button key={sub} onClick={() => setSkillSubTab(sub)}
                                             style={{
                                                 padding: '6px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 500,
@@ -2176,11 +2157,9 @@ function AgentDetailInner() {
                                 {/* ── Sub-tab 1: Skills ── */}
                                 {skillSubTab === 'skills' && (
                                     <div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                                            <div>
-                                                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('agent.capability.sections.skills')}</h3>
-                                                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('agent.capability.skillsHint')}</p>
-                                            </div>
+                                        {/* Import buttons */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: 0 }}>{t('agent.foundation.builtInHint')}</p>
                                             <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
                                                 <button className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={() => { setShowAgentUrlImport(true); setAgentUrlInput(''); }}>
                                                     {t('agent.capability.skillsUrl')}
@@ -2194,46 +2173,45 @@ function AgentDetailInner() {
                                             </div>
                                         </div>
 
-                                        {/* Installed skills */}
-                                        {installedSkillFolders.length + installedSkillFiles.length > 0 ? (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
-                                                {installedSkillFolders.map((item: any) => (
-                                                    <div key={item.path} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
-                                                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{'\uD83D\uDCC1'}</span>
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>{item.name}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t('agent.skills.folderFormat')}</div>
+                                        {/* Expandable skill list */}
+                                        {allSkillItems.length > 0 ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                {allSkillItems.map((item: any) => {
+                                                    const isExpanded = expandedSkill === item.path;
+                                                    return (
+                                                        <div key={item.path} className="card" style={{ padding: '14px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                                                                 onClick={() => setExpandedSkill(isExpanded ? null : item.path)}>
+                                                                <span>{item.is_dir ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}</span>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ fontWeight: 500, fontSize: '13px' }}>{item.name}</div>
+                                                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                                                        {item.is_dir ? t('agent.skills.folderFormat') : t('agent.skills.flatFormat')}
+                                                                    </div>
+                                                                </div>
+                                                                <span style={{ fontSize: '12px', color: 'var(--success)' }}>{'\u2713'}</span>
+                                                                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                                                            </div>
+                                                            {isExpanded && (
+                                                                <div style={{ marginTop: '12px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
+                                                                    {item.is_dir ? (
+                                                                        <FileBrowser api={adapter} rootPath={item.path} features={{ newFile: true, edit: true, delete: true, upload: true, directoryNavigation: true }} />
+                                                                    ) : (
+                                                                        <pre style={{ whiteSpace: 'pre-wrap', fontSize: '12px', margin: 0, color: 'var(--text-secondary)', maxHeight: '400px', overflow: 'auto' }}>
+                                                                            {expandedSkillContent?.content ?? t('common.loading')}
+                                                                        </pre>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <span style={{ fontSize: '12px', color: 'var(--success)', flexShrink: 0 }}>{'\u2713'}</span>
-                                                    </div>
-                                                ))}
-                                                {installedSkillFiles.map((item: any) => (
-                                                    <div key={item.path} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
-                                                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{'\uD83D\uDCC4'}</span>
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>{item.name}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{t('agent.skills.flatFormat')}</div>
-                                                        </div>
-                                                        <span style={{ fontSize: '12px', color: 'var(--success)', flexShrink: 0 }}>{'\u2713'}</span>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         ) : (
-                                            <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px', marginBottom: '24px' }}>
+                                            <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
                                                 {t('agent.capability.skillsEmpty')}
                                             </div>
                                         )}
-
-                                        {/* Skill file browser (collapsible) */}
-                                        <details className="card">
-                                            <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '14px', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <span style={{ transition: 'transform 0.15s', display: 'inline-block', fontSize: '12px' }}>{'\u25B6'}</span>
-                                                {t('agent.capability.sections.skillFiles')}
-                                            </summary>
-                                            <div style={{ marginTop: '12px' }}>
-                                                <FileBrowser api={adapter} rootPath="skills" features={{ newFile: true, edit: true, delete: true, newFolder: true, upload: true, directoryNavigation: true }} title={t('agent.skills.skillFiles')} />
-                                            </div>
-                                        </details>
 
                                         {/* Modals (ClawHub / URL / Presets) */}
                                         {showAgentClawhub && (
@@ -2332,67 +2310,11 @@ function AgentDetailInner() {
                                 {/* ── Sub-tab 2: MCP / Imported Tools ── */}
                                 {skillSubTab === 'mcp' && (
                                     <div>
-                                        <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>{t('agent.capability.sections.tools')}</h3>
                                         <CapabilitiesView agentId={id!} canManage={canManage} />
                                     </div>
                                 )}
 
-                                {/* ── Sub-tab 3: Memory ── */}
-                                {skillSubTab === 'memory' && (
-                                    <div>
-                                        {/* Memory facts from memory.json */}
-                                        <div className="card" style={{ marginBottom: '20px' }}>
-                                            <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>{t('agent.memory.title')}</h3>
-                                            {memoryFacts.length > 0 ? (
-                                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
-                                                    {memoryFacts.map((fact, i) => (
-                                                        <li key={i}>{fact}</li>
-                                                    ))}
-                                                </ul>
-                                            ) : (
-                                                <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                                                    {t('agent.capability.skillsEmpty')}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* memory.md editable */}
-                                        <div className="card">
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                <h3 style={{ fontSize: '14px', fontWeight: 600 }}>memory.md</h3>
-                                                {canManage && !memoryMdEditing && (
-                                                    <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setMemoryMdDraft(memoryMdContent?.content || ''); setMemoryMdEditing(true); }}>
-                                                        {t('agent.overview.editFile')}
-                                                    </button>
-                                                )}
-                                                {memoryMdEditing && (
-                                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setMemoryMdEditing(false)}>
-                                                            {t('agent.overview.cancelEdit')}
-                                                        </button>
-                                                        <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} disabled={saveMemoryMd.isPending} onClick={() => saveMemoryMd.mutate()}>
-                                                            {saveMemoryMd.isPending ? t('agent.overview.saving') : t('agent.overview.saveFile')}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {memoryMdEditing ? (
-                                                <textarea className="input" value={memoryMdDraft} onChange={e => setMemoryMdDraft(e.target.value)} rows={10}
-                                                    style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }} />
-                                            ) : (
-                                                <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
-                                                    {memoryMdContent?.content ? (
-                                                        <MarkdownRenderer content={memoryMdContent.content} />
-                                                    ) : (
-                                                        <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>memory.md</span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* ── Sub-tab 4: Knowledge Base ── */}
+                                {/* ── Sub-tab 3: Knowledge Base ── */}
                                 {skillSubTab === 'knowledge' && (() => {
                                     const kbAdapter: FileBrowserApi = {
                                         list: (p) => fileApi.list(id!, p),
@@ -2426,28 +2348,6 @@ function AgentDetailInner() {
                                         </div>
                                     );
                                 })()}
-
-                                {/* ── Sub-tab 5: Foundation (read-only) ── */}
-                                {skillSubTab === 'foundation' && (
-                                    <div>
-                                        <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{t('agent.foundation.title')}</h3>
-                                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>{t('agent.foundation.description')}</p>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-                                            {FOUNDATION_ITEMS.map(item => (
-                                                <div key={item.label} className="card" style={{ padding: '14px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                                                    <span style={{ fontSize: '22px', flexShrink: 0, lineHeight: 1 }}>{item.icon}</span>
-                                                    <div>
-                                                        <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>{item.label}</div>
-                                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{item.desc}</div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                                            {t('agent.foundation.alwaysAvailable')}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         );
                     })()

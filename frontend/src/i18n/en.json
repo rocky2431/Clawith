@@ -244,9 +244,7 @@
     "skillTabs": {
       "skills": "Skills",
       "mcp": "Imported Tools",
-      "memory": "Memory",
-      "knowledge": "Knowledge Base",
-      "foundation": "Foundation"
+      "knowledge": "Knowledge Base"
     },
     "foundation": {
       "title": "Built-in Capabilities",
@@ -263,10 +261,17 @@
       "messagingDesc": "Send messages to colleagues or other agents",
       "toolDiscovery": "Tool Discovery",
       "toolDiscoveryDesc": "Search and import new external tools",
-      "alwaysAvailable": "These capabilities are always available and don't need to be installed."
+      "alwaysAvailable": "These capabilities are always available and don't need to be installed.",
+      "builtInHint": "Every employee has built-in file I/O, search, and trigger capabilities."
     },
     "overview": {
       "personality": "Personality",
+      "memory": "Memory",
+      "heartbeat": "Heartbeat Instructions",
+      "relationships": "Relationships",
+      "reflections": "Reflections",
+      "createFile": "Create",
+      "fileNotExists": "This file doesn't exist yet.",
       "workingOn": "Working On",
       "editFile": "Edit",
       "saveFile": "Save",

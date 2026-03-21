@@ -255,9 +255,7 @@
     "skillTabs": {
       "skills": "技能",
       "mcp": "导入工具",
-      "memory": "记忆",
-      "knowledge": "知识库",
-      "foundation": "基础能力"
+      "knowledge": "知识库"
     },
     "foundation": {
       "title": "基础能力",
@@ -274,10 +272,17 @@
       "messagingDesc": "向同事或其他员工发消息",
       "toolDiscovery": "工具发现",
       "toolDiscoveryDesc": "搜索和导入新的外部工具",
-      "alwaysAvailable": "这些能力始终可用，不需要安装。"
+      "alwaysAvailable": "这些能力始终可用，不需要安装。",
+      "builtInHint": "每个员工自带文件读写、搜索、触发器等基础能力。"
     },
     "overview": {
       "personality": "人格定义",
+      "memory": "记忆",
+      "heartbeat": "心跳指令",
+      "relationships": "关系",
+      "reflections": "反思",
+      "createFile": "创建",
+      "fileNotExists": "此文件尚未创建。",
       "workingOn": "当前关注",
       "editFile": "编辑",
       "saveFile": "保存",
