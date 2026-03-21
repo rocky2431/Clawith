@@ -48,3 +48,11 @@ test('AgentDetail uses localized capability copy and normalized versioned API pa
     assert.doesNotMatch(source, /\/api\/agents\/\$\{id\}\/sessions/);
     assert.match(source, /\/api\/v1\/agents\/\$\{id\}\/sessions/);
 });
+
+test('AgentDetail reads bootstrap channel failure state and renders a post-create warning banner', () => {
+    const source = read(agentDetailPath);
+
+    assert.match(source, /location\.state/);
+    assert.match(source, /bootstrapChannelFailures/);
+    assert.match(source, /wizard\.stepChannel\.partialFailure/);
+});

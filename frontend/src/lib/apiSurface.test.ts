@@ -17,6 +17,7 @@ test('frontend api surface no longer exports legacy toolApi', () => {
     const source = read();
 
     assert.doesNotMatch(source, /export const toolApi = \{/);
+    assert.doesNotMatch(source, /create:\s*\(data:\s*any\)\s*=>\s*request<any>\('\/agents\/'/);
     assert.doesNotMatch(source, /\/tools\/agents\/\$\{agentId\}/);
     assert.doesNotMatch(source, /templates:\s*\(\)\s*=>\s*request<any\[]>\('\/agents\/templates'\)/);
     assert.match(source, /updatePolicy:\s*\(packName: string, enabled: boolean\)/);

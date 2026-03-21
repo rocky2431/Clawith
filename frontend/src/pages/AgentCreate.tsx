@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agentApi, capabilityApi, channelApi, enterpriseApi, packApi, skillApi } from '../services/api';
+import { agentApi, capabilityApi, enterpriseApi, packApi, skillApi } from '../services/api';
 import ChannelConfig from '../components/ChannelConfig';
+import { buildBootstrapChannels } from '../lib/agentBootstrap.ts';
 
 const STEPS = ['identity', 'capabilities', 'risk', 'channel', 'review'] as const;
 
@@ -110,91 +111,24 @@ export default function AgentCreate() {
         () => (packCatalog as any[]).filter((pack: any) => selectedPacks.includes(pack.name)),
         [packCatalog, selectedPacks],
     );
+    const configuredChannels = useMemo(
+        () => buildBootstrapChannels(channelValues),
+        [channelValues],
+    );
 
     const createMutation = useMutation({
         mutationFn: async (data: any) => {
-            return await agentApi.create(data);
+            return await agentApi.bootstrap(data);
         },
-        onSuccess: async (agent) => {
+        onSuccess: async (result) => {
+            const agent = result.agent;
             queryClient.invalidateQueries({ queryKey: ['agents'] });
-
-            // Automatically bind channels if configured in wizard
-            // Feishu
-            if (channelValues.feishu_app_id && channelValues.feishu_app_secret) {
-                try {
-                    await channelApi.create(agent.id, {
-                        channel_type: 'feishu',
-                        app_id: channelValues.feishu_app_id,
-                        app_secret: channelValues.feishu_app_secret,
-                        encrypt_key: channelValues.feishu_encrypt_key || undefined,
-                        extra_config: {
-                            connection_mode: channelValues.feishu_connection_mode || 'websocket'
-                        }
-                    });
-                } catch (err) {
-                    console.error('Failed to bind Feishu channel:', err);
-                    setError(
-                        'Failed to bind the Feishu channel. Please verify the Feishu configuration on the agent settings page and try again.'
-                    );
-                }
-            }
-
-            // Slack
-            if (channelValues.slack_bot_token && channelValues.slack_signing_secret) {
-                try {
-                    await channelApi.create(agent.id, {
-                        channel_type: 'slack',
-                        app_id: channelValues.slack_bot_token,
-                        app_secret: channelValues.slack_signing_secret,
-                    });
-                } catch (err) {
-                    console.error('Failed to bind Slack channel:', err);
-                    setError(
-                        'Failed to bind the Slack channel. Please verify the Slack configuration on the agent settings page and try again.'
-                    );
-                }
-            }
-
-            // Discord
-            if (channelValues.discord_bot_token && channelValues.discord_application_id) {
-                try {
-                    await channelApi.create(agent.id, {
-                        channel_type: 'discord',
-                        app_id: channelValues.discord_application_id,
-                        app_secret: channelValues.discord_bot_token,
-                        encrypt_key: channelValues.discord_public_key || undefined,
-                    });
-                } catch (err) {
-                    console.error('Failed to bind Discord channel:', err);
-                    setError(
-                        'Failed to bind the Discord channel. Please verify the Discord configuration on the agent settings page and try again.'
-                    );
-                }
-            }
-
-            // WeCom
-            if (channelValues.wecom_bot_id && channelValues.wecom_bot_secret) {
-                try {
-                    const connMode = channelValues.wecom_connection_mode || 'websocket';
-                    await channelApi.create(agent.id, {
-                        channel_type: 'wecom',
-                        app_id: connMode === 'websocket' ? channelValues.wecom_bot_id : undefined,
-                        app_secret: connMode === 'websocket' ? channelValues.wecom_bot_secret : undefined,
-                        extra_config: {
-                            connection_mode: connMode,
-                            bot_id: channelValues.wecom_bot_id,
-                            bot_secret: channelValues.wecom_bot_secret,
-                        }
-                    });
-                } catch (err) {
-                    console.error('Failed to bind WeCom channel:', err);
-                    setError(
-                        'Failed to bind the WeCom channel. Please verify the WeCom configuration on the agent settings page and try again.'
-                    );
-                }
-            }
-
-            navigate(`/agents/${agent.id}`);
+            const failedChannels = (result.channel_results || []).filter((item: any) => item.status === 'failed');
+            navigate(`/agents/${agent.id}`, failedChannels.length > 0 ? {
+                state: {
+                    bootstrapChannelFailures: failedChannels,
+                },
+            } : undefined);
         },
         onError: (err: any) => setError(err.message),
     });
@@ -238,20 +172,23 @@ export default function AgentCreate() {
             if (!validateStep0()) return;
         }
         createMutation.mutate({
-            name: form.name,
-            role_description: form.role_description,
-            personality: form.personality,
-            boundaries: form.boundaries,
-            primary_model_id: form.primary_model_id || undefined,
-            fallback_model_id: form.fallback_model_id || undefined,
-            permission_scope_type: form.permission_scope_type,
-            max_tokens_per_day: form.max_tokens_per_day ? Number(form.max_tokens_per_day) : undefined,
-            max_tokens_per_month: form.max_tokens_per_month ? Number(form.max_tokens_per_month) : undefined,
-            skill_ids: form.skill_ids,
-            permission_access_level: form.permission_access_level,
-            tenant_id: currentTenant || undefined,
-            security_zone: form.security_zone,
-            agent_class: form.agent_class,
+            agent: {
+                name: form.name,
+                role_description: form.role_description,
+                personality: form.personality,
+                boundaries: form.boundaries,
+                primary_model_id: form.primary_model_id || undefined,
+                fallback_model_id: form.fallback_model_id || undefined,
+                permission_scope_type: form.permission_scope_type,
+                max_tokens_per_day: form.max_tokens_per_day ? Number(form.max_tokens_per_day) : undefined,
+                max_tokens_per_month: form.max_tokens_per_month ? Number(form.max_tokens_per_month) : undefined,
+                skill_ids: form.skill_ids,
+                permission_access_level: form.permission_access_level,
+                tenant_id: currentTenant || undefined,
+                security_zone: form.security_zone,
+                agent_class: form.agent_class,
+            },
+            channels: configuredChannels,
         });
     };
 
@@ -496,7 +433,7 @@ export default function AgentCreate() {
                     </div>
                 )}
 
-                {/* Step 3: Risk & Approval */}
+                {/* Step 3: Security & Access */}
                 {step === 2 && (
                     <div>
                         <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step3New.title')}</h3>
@@ -628,7 +565,7 @@ export default function AgentCreate() {
                                 { label: t('wizard.stepReview.agentSecurityZone'), value: t(`agent.zone.${form.security_zone}`, form.security_zone) },
                                 { label: t('wizard.stepReview.agentAccessScope'), value: form.permission_scope_type === 'company' ? t('wizard.step4.companyWide') : t('wizard.step4.selfOnly') },
                                 ...(form.permission_scope_type === 'company' ? [{ label: t('wizard.stepReview.agentAccessLevel'), value: form.permission_access_level === 'manage' ? t('wizard.step4.manageLevel', 'Manage') : t('wizard.step4.useLevel', 'Use') }] : []),
-                                { label: t('wizard.stepReview.channelsConfigured'), value: Object.keys(channelValues).length > 0 ? t('wizard.stepReview.yes') : t('wizard.stepReview.no') },
+                                { label: t('wizard.stepReview.channelsConfigured'), value: configuredChannels.length > 0 ? `${configuredChannels.length}` : t('wizard.stepReview.no') },
                             ].map((row, i) => (
                                 <div key={i} style={{
                                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',

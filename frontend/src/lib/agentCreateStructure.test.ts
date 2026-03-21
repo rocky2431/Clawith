@@ -38,6 +38,17 @@ test('AgentCreate removes legacy openclaw branching from the main creation flow'
     assert.doesNotMatch(source, /openclaw\./);
     assert.doesNotMatch(source, /agent_type:\s*agentType/);
     assert.doesNotMatch(source, /agent_type:\s*'native'/);
+    assert.match(source, /agentApi\.bootstrap/);
+    assert.doesNotMatch(source, /channelApi\.create\(/);
+    assert.doesNotMatch(source, /window\.alert\(/);
+    assert.doesNotMatch(source, /Risk & Approval/);
+});
+
+test('AgentCreate forwards bootstrap channel failures to AgentDetail state instead of alerting inline', () => {
+    const source = read();
+
+    assert.match(source, /bootstrapChannelFailures/);
+    assert.match(source, /navigate\(`\/agents\/\$\{agent\.id\}`,\s*failedChannels\.length > 0 \?/);
 });
 
 test('AgentCreate uses dedicated channel and review keys instead of duplicated step5 keys', () => {

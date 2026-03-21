@@ -116,6 +116,8 @@ async def configure_wecom_channel(
             status_code=422,
             detail="Either bot_id+bot_secret (WebSocket) or corp_id+secret+token+encoding_aes_key (Webhook) required"
         )
+    if has_webhook_mode and not wecom_agent_id:
+        raise HTTPException(status_code=422, detail="wecom_agent_id is required for WeCom webhook mode")
 
     extra_config = {
         "wecom_agent_id": wecom_agent_id,

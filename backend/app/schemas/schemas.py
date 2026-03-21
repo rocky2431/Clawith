@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -55,6 +56,8 @@ class UserUpdate(BaseModel):
 
 # ─── Agent ──────────────────────────────────────────────
 
+AgentClass = Literal["internal_system", "internal_tenant", "external_gateway", "external_api"]
+
 class AgentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100, description="Agent name, 2-100 characters")
     role_description: str = Field(default="", max_length=500, description="Role description, max 500 characters")
@@ -77,10 +80,31 @@ class AgentCreate(BaseModel):
     max_tokens_per_day: int | None = None
     max_tokens_per_month: int | None = None
     # Classification
-    agent_class: str = "general"  # general | specialist | executive
+    agent_class: AgentClass = "internal_tenant"
     security_zone: str = "standard"  # public | standard | restricted
     # Skills to copy into agent workspace
     skill_ids: list[uuid.UUID] = []
+
+
+class AgentBootstrapChannelIn(BaseModel):
+    channel_type: str
+    config: dict = Field(default_factory=dict)
+
+
+class AgentBootstrapCreate(BaseModel):
+    agent: AgentCreate
+    channels: list[AgentBootstrapChannelIn] = Field(default_factory=list)
+
+
+class AgentBootstrapChannelResult(BaseModel):
+    channel_type: str
+    status: str
+    detail: str | None = None
+
+
+class AgentBootstrapOut(BaseModel):
+    agent: "AgentOut"
+    channel_results: list[AgentBootstrapChannelResult] = Field(default_factory=list)
 
 
 class AgentOut(BaseModel):
@@ -114,13 +138,16 @@ class AgentOut(BaseModel):
     llm_calls_today: int = 0
     max_llm_calls_per_day: int = 100
     agent_type: str = "native"
-    agent_class: str = "general"
+    agent_class: AgentClass = "internal_tenant"
     security_zone: str = "standard"
     openclaw_last_seen: datetime | None = None
     created_at: datetime
     last_active_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+AgentBootstrapOut.model_rebuild()
 
 
 class AgentUpdate(BaseModel):
@@ -141,7 +168,7 @@ class AgentUpdate(BaseModel):
     heartbeat_interval_minutes: int | None = None
     heartbeat_active_hours: str | None = None
     timezone: str | None = None
-    agent_class: str | None = None
+    agent_class: AgentClass | None = None
     security_zone: str | None = None
     expires_at: datetime | None = None  # Admin only — extend agent expiry
 

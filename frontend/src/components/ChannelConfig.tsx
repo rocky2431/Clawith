@@ -6,7 +6,7 @@ import { channelApi } from '../services/api';
 // ─── Shared fetchAuth (same as AgentDetail) ─────────────
 function fetchAuth<T>(url: string, options?: RequestInit): Promise<T> {
     const token = localStorage.getItem('token');
-    return fetch(`/api${url}`, {
+    return fetch(`/api/v1${url}`, {
         ...options,
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     }).then(r => r.json());

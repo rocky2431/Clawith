@@ -37,7 +37,7 @@ class Agent(Base):
     openclaw_last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Agent classification and security zone
-    agent_class: Mapped[str] = mapped_column(String(30), default="general", nullable=False)
+    agent_class: Mapped[str] = mapped_column(String(30), default="internal_tenant", nullable=False)
     security_zone: Mapped[str] = mapped_column(String(30), default="standard", nullable=False)
 
     # Runtime

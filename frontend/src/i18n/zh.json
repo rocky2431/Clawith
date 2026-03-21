@@ -488,7 +488,7 @@
       "channel": "通道绑定",
       "identity": "身份与模型",
       "capabilities": "初始能力",
-      "risk": "风险与审批",
+      "risk": "安全与访问",
       "review": "确认创建"
     },
     "next": "下一步",
@@ -553,12 +553,12 @@
     },
     "step2New": {
       "title": "初始能力",
-      "description": "选择 starter skills。能力包会在运行时按需激活，而不是默认常驻。",
+      "description": "选择初始 skills。下方展示的是这些 skills 会派生出的能力包预览，不代表它们会在创建后默认常驻。",
       "kernelInfo": "数字员工默认拥有一组稳定的内核原语。飞书、邮件、网页、文档、MCP 等能力将通过 skill 或 MCP 按需接入。",
       "kernelTitle": "内核工具",
-      "starterPacksTitle": "Starter Packs 预览",
+      "starterPacksTitle": "派生能力包预览",
       "starterPacksDescription": "已选 skills 会声明首批可按需激活的能力包。它们不会默认常驻，只有在运行时加载对应 skill 后才会出现。",
-      "starterPacksEmpty": "当前还没有 starter packs。请先选择下方 skills，确定数字员工的首批扩展能力。",
+      "starterPacksEmpty": "当前还没有可派生的能力包。请先选择下方 skills，确定数字员工的首批扩展能力。",
       "packEnabled": "已启用",
       "packDisabled": "已禁用",
       "requiredBadge": "必选",
@@ -566,13 +566,14 @@
       "governedActionsHint": "当前已有 {{count}} 个受治理能力动作。来自这些能力包的高风险操作在创建后仍会经过 capability gate 与审批流。"
     },
     "step3New": {
-      "title": "风险与审批",
-      "capabilityHint": "能力治理策略可在创建后于 Agent 设置中配置。"
+      "title": "安全与访问",
+      "capabilityHint": "此步骤只设置安全区域与默认访问范围。更细的 capability policy 需要在创建后到 Agent 设置里配置。"
     },
     "stepChannel": {
       "title": "通道绑定",
       "description": "连接通信渠道，让数字员工能通过飞书、Slack、Discord、企业微信或 Web 对外工作。此步骤可跳过，稍后仍可在 Agent 设置中补充。",
-      "skipHint": "跳过此步骤后，数字员工仍可先通过 Web 端工作"
+      "skipHint": "跳过此步骤后，数字员工仍可先通过 Web 端工作",
+      "partialFailure": "Agent 已创建，但部分渠道配置失败：{{channels}}"
     },
     "stepReview": {
       "title": "确认创建",
@@ -581,7 +582,7 @@
       "agentRole": "角色",
       "agentModel": "模型",
       "agentSkills": "技能",
-      "agentStarterPacks": "Starter Packs",
+      "agentStarterPacks": "派生能力包",
       "agentSecurityZone": "安全区域",
       "agentAccessScope": "访问范围",
       "agentAccessLevel": "访问级别",
@@ -1164,7 +1165,8 @@
     "atlassianApiKeyHint": "服务账号密钥以 ATSTT 开头。个人 API 令牌：将 email:token 进行 base64 编码后加上 Basic 前缀",
     "atlassianCloudIdHint": "多站点部署必填。访问 your-site.atlassian.net/_edge/tenant_info 获取",
     "saveConfig": "保存配置",
-    "copy": "复制"
+    "copy": "复制",
+    "close": "关闭"
   },
   "channelGuide": {
     "setupGuide": "配置说明",

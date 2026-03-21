@@ -190,8 +190,8 @@ export const agentApi = {
 
     get: (id: string) => request<Agent>(`/agents/${id}`),
 
-    create: (data: any) =>
-        request<any>('/agents/', { method: 'POST', body: JSON.stringify(data) }),
+    bootstrap: (data: any) =>
+        request<any>('/agents/bootstrap', { method: 'POST', body: JSON.stringify(data) }),
 
     update: (id: string, data: Partial<Agent>) =>
         request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
