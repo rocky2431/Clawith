@@ -27,7 +27,6 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
         const fieldLabels: Record<string, string> = {
             name: '名称',
             role_description: '角色描述',
-            agent_type: '智能体类型',
             primary_model_id: '主模型',
             max_tokens_per_day: '每日 Token 上限',
             max_tokens_per_month: '每月 Token 上限',
@@ -212,9 +211,6 @@ export const agentApi = {
     collaborators: (id: string) =>
         request<any[]>(`/agents/${id}/collaborators`),
 
-    templates: () =>
-        request<any[]>('/agents/templates'),
-
     // OpenClaw gateway
     generateApiKey: (id: string) =>
         request<{ api_key: string; message: string }>(`/agents/${id}/api-key`, { method: 'POST' }),
@@ -305,7 +301,6 @@ export const enterpriseApi = {
         const tid = localStorage.getItem('current_tenant_id');
         return request<any[]>(`/enterprise/llm-models${tid ? `?tenant_id=${tid}` : ''}`);
     },
-    templates: () => request<any[]>('/agents/templates'),
 
     // Enterprise Knowledge Base
     kbFiles: (path: string = '') =>

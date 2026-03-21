@@ -44,32 +44,6 @@ async def _lazy_reset_token_counters(agent: Agent, db: AsyncSession) -> bool:
     return changed
 
 
-@router.get("/templates")
-async def list_templates(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all available agent templates."""
-    from app.models.agent import AgentTemplate
-    result = await db.execute(
-        select(AgentTemplate).order_by(AgentTemplate.is_builtin.desc(), AgentTemplate.created_at.asc())
-    )
-    templates = result.scalars().all()
-    return [
-        {
-            "id": str(t.id),
-            "name": t.name,
-            "description": t.description,
-            "icon": t.icon,
-            "category": t.category,
-            "is_builtin": t.is_builtin,
-            "soul_template": t.soul_template,
-            "default_skills": t.default_skills,
-        }
-        for t in templates
-    ]
-
-
 @router.get("/", response_model=list[AgentOut])
 async def list_agents(
     tenant_id: uuid.UUID | None = None,
@@ -178,12 +152,11 @@ async def create_agent(
         avatar_url=data.avatar_url,
         creator_id=current_user.id,
         tenant_id=target_tenant_id,
-        agent_type=data.agent_type or "native",
+        agent_type="native",
         primary_model_id=data.primary_model_id,
         fallback_model_id=data.fallback_model_id,
         max_tokens_per_day=data.max_tokens_per_day,
         max_tokens_per_month=data.max_tokens_per_month,
-        template_id=data.template_id,
         agent_class=data.agent_class,
         security_zone=data.security_zone,
         status="draft",
@@ -224,26 +197,6 @@ async def create_agent(
             db.add(AgentPermission(agent_id=agent.id, scope_type="user", scope_id=current_user.id, access_level="manage"))
 
     await db.flush()
-
-    # For OpenClaw agents: skip file system and container setup, generate API key
-    if agent.agent_type == "openclaw":
-        import secrets, hashlib
-        raw_key = f"oc-{secrets.token_urlsafe(32)}"
-        agent.api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-        agent.status = transition(agent.status, "idle", TransitionContext(is_system=True))
-        # Audit: openclaw agent created
-        try:
-            from app.core.policy import write_audit_event
-            await write_audit_event(db, event_type="agent.created", severity="info",
-                actor_type="user", actor_id=current_user.id, tenant_id=current_user.tenant_id,
-                action="create_agent", resource_type="agent", resource_id=agent.id,
-                details={"name": agent.name, "agent_type": "openclaw"})
-        except Exception:
-            logger.warning("Audit write failed for agent.created", exc_info=True)
-        await db.commit()
-        out = AgentOut.model_validate(agent).model_dump()
-        out["api_key"] = raw_key  # Return once on creation
-        return out
 
     # Initialize agent file system from template
     from app.services.agent_manager import agent_manager

@@ -1,8 +1,8 @@
-"""Agent collaboration and template market API routes."""
+"""Agent collaboration and handover API routes."""
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import check_agent_access
 from app.core.security import get_current_user, get_current_admin
 from app.database import get_db
-from app.models.agent import Agent, AgentTemplate
+from app.models.agent import Agent
 from app.models.user import User
 from app.services.collaboration import collaboration_service
 
@@ -72,89 +72,6 @@ async def send_inter_agent_message(
     return await collaboration_service.send_message_between_agents(
         db, agent_id, data.to_agent_id, data.message, data.msg_type
     )
-
-
-# ─── Template Market ────────────────────────────────────
-
-class TemplateCreate(BaseModel):
-    name: str
-    description: str = ""
-    icon: str = "🤖"
-    category: str = "general"
-    soul_template: str = ""
-    default_skills: list[str] = []
-
-
-class TemplateOut(BaseModel):
-    id: uuid.UUID
-    name: str
-    description: str
-    icon: str
-    category: str
-    soul_template: str
-    default_skills: list
-    is_builtin: bool
-    created_at: str | None = None
-
-    model_config = {"from_attributes": True}
-
-
-@router.get("/templates", response_model=list[TemplateOut])
-async def list_templates(
-    category: str | None = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """List available agent templates."""
-    query = select(AgentTemplate).order_by(AgentTemplate.name)
-    if category:
-        query = query.where(AgentTemplate.category == category)
-    result = await db.execute(query)
-    return [TemplateOut.model_validate(t) for t in result.scalars().all()]
-
-
-@router.get("/templates/{template_id}", response_model=TemplateOut)
-async def get_template(template_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """Get template details."""
-    result = await db.execute(select(AgentTemplate).where(AgentTemplate.id == template_id))
-    template = result.scalar_one_or_none()
-    if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return TemplateOut.model_validate(template)
-
-
-@router.post("/templates", response_model=TemplateOut, status_code=status.HTTP_201_CREATED)
-async def create_template(
-    data: TemplateCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a new agent template (share to template market)."""
-    template = AgentTemplate(
-        name=data.name,
-        description=data.description,
-        icon=data.icon,
-        category=data.category,
-        soul_template=data.soul_template,
-        default_skills=data.default_skills,
-        created_by=current_user.id,
-    )
-    db.add(template)
-    await db.flush()
-    return TemplateOut.model_validate(template)
-
-
-@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_template(
-    template_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Delete a template (admin or creator)."""
-    result = await db.execute(select(AgentTemplate).where(AgentTemplate.id == template_id))
-    template = result.scalar_one_or_none()
-    if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
-    await db.delete(template)
 
 
 # ─── Agent Handover ─────────────────────────────────────

@@ -1772,7 +1772,7 @@ export default function EnterpriseSettings() {
                                             const token = localStorage.getItem('token');
                                             const testData: any = { provider: modelForm.provider, model: modelForm.model, base_url: modelForm.base_url || undefined };
                                             if (modelForm.api_key) testData.api_key = modelForm.api_key;
-                                            const res = await fetch('/api/enterprise/llm-test', {
+                                            const res = await fetch('/api/v1/enterprise/llm-test', {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                                                 body: JSON.stringify(testData),
@@ -1862,7 +1862,7 @@ export default function EnterpriseSettings() {
                                                         const testData: any = { provider: modelForm.provider, model: modelForm.model, base_url: modelForm.base_url || undefined };
                                                         if (modelForm.api_key) testData.api_key = modelForm.api_key;
                                                         testData.model_id = editingModelId;
-                                                        const res = await fetch('/api/enterprise/llm-test', {
+                                                        const res = await fetch('/api/v1/enterprise/llm-test', {
                                                             method: 'POST',
                                                             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                                                             body: JSON.stringify(testData),

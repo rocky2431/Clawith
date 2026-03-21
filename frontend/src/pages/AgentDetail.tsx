@@ -195,11 +195,11 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                 )}
             </div>
 
-            {/* Section 3: Skill-declared Packs */}
+            {/* Section 3: Skill packs */}
             <div>
-                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>Skill-declared Packs</h3>
+                <h3 style={{ marginBottom: '4px', fontSize: '14px' }}>{t('enterprise.packs.skillDeclaredPacks')}</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
-                    Installed skills that can expand this agent into additional capability packs.
+                    {t('enterprise.packs.skillDeclaredPacksDesc')}
                 </p>
                 {skill_declared_packs && skill_declared_packs.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
@@ -207,13 +207,13 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                             <div key={pack.name} className="card" style={{ padding: '14px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '8px' }}>
                                     <div style={{ fontWeight: 600, fontSize: '13px' }}>{pack.name}</div>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{pack.source || 'skill'}</span>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{pack.source || t('enterprise.packs.skillSourceFallback')}</span>
                                 </div>
                                 {pack.summary ? (
                                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{pack.summary}</div>
                                 ) : null}
                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                                    Skills: {(pack.skills || []).join(', ') || '—'}
+                                    {t('enterprise.packs.skillsLabel')}: {(pack.skills || []).join(', ') || '—'}
                                 </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                     {(pack.tools || []).map((tool: string) => (
@@ -236,7 +236,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                     </div>
                 ) : (
                     <div className="card" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                        No skill-declared packs yet.
+                        {t('enterprise.packs.noSkillDeclaredPacks')}
                     </div>
                 )}
             </div>
@@ -264,7 +264,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                 </summary>
                 {!latestSessionId ? (
                     <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
-                        No chat session found yet. Session-level activations will appear after the first conversation.
+                        {t('enterprise.packs.noSessionActivations')}
                     </p>
                 ) : runtimeLoading || !runtimeSummary ? (
                     <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '8px 0 0' }}>
@@ -273,7 +273,7 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Activated Packs</div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.activatedPacks')}</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                 {runtimeSummary.activated_packs.length > 0 ? runtimeSummary.activated_packs.map((pack: string) => (
                                     <span
@@ -290,13 +290,13 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                                         {pack}
                                     </span>
                                 )) : (
-                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>No capability packs activated in the latest session.</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('enterprise.packs.noActivatedPacks')}</span>
                                 )}
                             </div>
                         </div>
 
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Used Tools</div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.usedTools')}</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                 {runtimeSummary.used_tools.length > 0 ? runtimeSummary.used_tools.map((tool: string) => (
                                     <span
@@ -314,14 +314,14 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                                         {tool}
                                     </span>
                                 )) : (
-                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>No tool calls recorded in the latest session.</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('enterprise.packs.noUsedTools')}</span>
                                 )}
                             </div>
                         </div>
 
                         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                             <div style={{ minWidth: '180px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Blocked Capabilities</div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.blockedCapabilities')}</div>
                                 {runtimeSummary.blocked_capabilities.length > 0 ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         {runtimeSummary.blocked_capabilities.map((item: any, index: number) => (
@@ -344,12 +344,12 @@ function CapabilitiesView({ agentId, canManage }: { agentId: string; canManage: 
                                         ))}
                                     </div>
                                 ) : (
-                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>No capability blocks recorded.</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('enterprise.packs.noBlockedCapabilities')}</span>
                                 )}
                             </div>
 
                             <div style={{ minWidth: '180px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Compactions</div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{t('enterprise.packs.compactions')}</div>
                                 <div
                                     style={{
                                         padding: '10px 12px',
@@ -1088,7 +1088,7 @@ function AgentDetailInner() {
         if (!confirm(t('chat.deleteConfirm', 'Delete this session and all its messages? This cannot be undone.'))) return;
         const tkn = localStorage.getItem('token');
         try {
-            await fetch(`/api/agents/${id}/sessions/${sessionId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tkn}` } });
+            await fetch(`/api/v1/agents/${id}/sessions/${sessionId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tkn}` } });
             // If deleted the active session, clear it
             if (activeSession?.id === sessionId) {
                 setActiveSession(null);
@@ -1096,9 +1096,9 @@ function AgentDetailInner() {
                 setHistoryMsgs([]);
             }
             // Refresh session lists
-            const r1 = await fetch(`/api/agents/${id}/sessions?scope=mine`, { headers: { Authorization: `Bearer ${tkn}` } });
+            const r1 = await fetch(`/api/v1/agents/${id}/sessions?scope=mine`, { headers: { Authorization: `Bearer ${tkn}` } });
             if (r1.ok) setSessions(await r1.json());
-            const r2 = await fetch(`/api/agents/${id}/sessions?scope=all`, { headers: { Authorization: `Bearer ${tkn}` } });
+            const r2 = await fetch(`/api/v1/agents/${id}/sessions?scope=all`, { headers: { Authorization: `Bearer ${tkn}` } });
             if (r2.ok) {
                 const all2 = await r2.json();
                 setAllSessions(all2.filter((s: any) => s.source_channel !== 'trigger'));
@@ -1140,7 +1140,7 @@ function AgentDetailInner() {
     const isAdmin = currentUser?.role === 'platform_admin' || currentUser?.role === 'org_admin';
     const resolveHistoryImageUrl = (fileName: string) => {
         if (!id || !token) return undefined;
-        return `/api/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(fileName)}&token=${token}`;
+        return `/api/v1/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(fileName)}&token=${token}`;
     };
 
     // Expiry editor modal state

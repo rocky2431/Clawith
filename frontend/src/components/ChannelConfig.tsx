@@ -619,7 +619,7 @@ export default function ChannelConfig({ mode, agentId, canManage = true, values,
         }
 
         // Webhook URL for this channel
-        const webhookUrl = webhook?.webhook_url || `${window.location.origin}/api/channel/${ch.id === 'feishu' ? 'feishu' : ch.apiSlug?.replace('-channel', '')}/${agentId}/webhook`;
+        const webhookUrl = webhook?.webhook_url || `${window.location.origin}/api/v1/channel/${ch.id === 'feishu' ? 'feishu' : ch.apiSlug?.replace('-channel', '')}/${agentId}/webhook`;
 
         // Determine which fields to use (wecom websocket mode has different fields)
         const activeFields = (ch.connectionMode && isWs && ch.wsFields) ? ch.wsFields : ch.fields;

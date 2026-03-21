@@ -548,41 +548,40 @@
       "manageLevel": "管理",
       "manageDesc": "包含设置、灵魂、关系等完整管理权限"
     },
-    "step5": {
-      "title": "飞书机器人配置（可选）",
-      "description": "为数字员工配置独立的飞书机器人，用户可在飞书中直接与其对话。此步骤可跳过，创建后仍可在详情页「设置」中配置。",
-      "configSteps": "配置步骤：",
-      "connectionMode": "连接模式",
-      "modeWebsocket": "长连接 (WebSocket) - 推荐",
-      "modeWebhook": "Webhook 回调",
-      "step1Feishu": "登录",
-      "feishuPlatform": "飞书开放平台",
-      "step2Feishu": "创建企业自建应用 → 开启机器人能力",
-      "step3Feishu": "复制 App ID 和 App Secret 填入下方",
-      "step4Feishu": "创建后，将获得 Webhook URL 用于配置事件回调",
-      "encryptKeyOptional": "Encrypt Key（可选）",
-      "encryptKeyPlaceholder": "用于事件加密验证",
-      "skipHint": "跳过此步骤后，数字员工仍可通过 Web 端进行对话"
-    },
     "step1New": {
       "title": "身份与模型"
     },
     "step2New": {
       "title": "初始能力",
-      "description": "选择 Agent 的技能。",
-      "kernelInfo": "Agent 默认拥有内核工具（文件读写、触发器、搜索等）。能力包（飞书、邮件、网页搜索等）将通过 skill 和渠道配置按需激活。"
+      "description": "选择 starter skills。能力包会在运行时按需激活，而不是默认常驻。",
+      "kernelInfo": "数字员工默认拥有一组稳定的内核原语。飞书、邮件、网页、文档、MCP 等能力将通过 skill 或 MCP 按需接入。",
+      "kernelTitle": "内核工具",
+      "starterPacksTitle": "Starter Packs 预览",
+      "starterPacksDescription": "已选 skills 会声明首批可按需激活的能力包。它们不会默认常驻，只有在运行时加载对应 skill 后才会出现。",
+      "starterPacksEmpty": "当前还没有 starter packs。请先选择下方 skills，确定数字员工的首批扩展能力。",
+      "packEnabled": "已启用",
+      "packDisabled": "已禁用",
+      "requiredBadge": "必选",
+      "noSkills": "暂无可用技能，请先在公司设置中添加。",
+      "governedActionsHint": "当前已有 {{count}} 个受治理能力动作。来自这些能力包的高风险操作在创建后仍会经过 capability gate 与审批流。"
     },
     "step3New": {
       "title": "风险与审批",
       "capabilityHint": "能力治理策略可在创建后于 Agent 设置中配置。"
     },
-    "step5": {
+    "stepChannel": {
+      "title": "通道绑定",
+      "description": "连接通信渠道，让数字员工能通过飞书、Slack、Discord、企业微信或 Web 对外工作。此步骤可跳过，稍后仍可在 Agent 设置中补充。",
+      "skipHint": "跳过此步骤后，数字员工仍可先通过 Web 端工作"
+    },
+    "stepReview": {
       "title": "确认创建",
       "summary": "创建前确认 Agent 配置。",
       "agentName": "名称",
       "agentRole": "角色",
       "agentModel": "模型",
       "agentSkills": "技能",
+      "agentStarterPacks": "Starter Packs",
       "agentSecurityZone": "安全区域",
       "agentAccessScope": "访问范围",
       "agentAccessLevel": "访问级别",
@@ -891,6 +890,11 @@
       "capabilityPacks": "能力包",
       "installed": "已安装扩展",
       "sessionActivations": "会话激活记录",
+      "skillDeclaredPacks": "Skill 声明的能力包",
+      "skillDeclaredPacksDesc": "这些已安装 skills 会在运行时为该 Agent 按需扩展额外能力包。",
+      "noSkillDeclaredPacks": "当前还没有由 skill 声明的能力包。",
+      "skillSourceFallback": "skill",
+      "skillsLabel": "关联 Skills",
       "source": "来源",
       "sourceSystem": "系统",
       "sourceChannel": "渠道",
@@ -898,6 +902,14 @@
       "sourceSkill": "技能",
       "activation": "激活方式",
       "tools": "暴露工具",
+      "activatedPacks": "已激活能力包",
+      "noActivatedPacks": "最新会话里还没有激活任何能力包。",
+      "usedTools": "已使用工具",
+      "noUsedTools": "最新会话里还没有记录任何工具调用。",
+      "blockedCapabilities": "被拦截能力",
+      "noBlockedCapabilities": "当前没有记录到 capability block。",
+      "compactions": "上下文压缩次数",
+      "noSessionActivations": "当前还没有聊天会话；首轮对话后这里会显示会话级激活记录。",
       "requiresChannel": "需要渠道配置",
       "noCapabilityRestriction": "无限制",
       "restricted": "受治理限制"

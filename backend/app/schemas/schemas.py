@@ -57,7 +57,6 @@ class UserUpdate(BaseModel):
 
 class AgentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100, description="Agent name, 2-100 characters")
-    agent_type: str = "native"  # native | openclaw
     role_description: str = Field(default="", max_length=500, description="Role description, max 500 characters")
     bio: str | None = None
     welcome_message: str | None = None
@@ -74,8 +73,6 @@ class AgentCreate(BaseModel):
     permission_access_level: str = "use"  # use | manage
     # Target tenant (admin-only override; otherwise ignored)
     tenant_id: uuid.UUID | None = None
-    # Template
-    template_id: uuid.UUID | None = None
     # Token limits
     max_tokens_per_day: int | None = None
     max_tokens_per_month: int | None = None

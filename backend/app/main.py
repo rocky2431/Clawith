@@ -67,7 +67,6 @@ async def lifespan(app: FastAPI):
     import os
     from app.services.trigger_daemon import start_trigger_daemon
     from app.services.tool_seeder import seed_builtin_tools
-    from app.services.template_seeder import seed_agent_templates
     from app.services.feishu_ws import feishu_ws_manager
     from app.services.dingtalk_stream import dingtalk_stream_manager
     from app.services.wecom_stream import wecom_stream_manager
@@ -181,11 +180,6 @@ async def lifespan(app: FastAPI):
             await seed_atlassian_rovo_tools(_rovo_key)
     except Exception as e:
         logger.warning(f"[startup] Atlassian tools seed failed: {e}")
-
-    try:
-        await seed_agent_templates()
-    except Exception as e:
-        logger.warning(f"[startup] Agent templates seed failed: {e}")
 
     try:
         from app.services.skill_seeder import seed_skills, push_default_skills_to_existing_agents

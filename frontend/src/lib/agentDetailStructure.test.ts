@@ -35,3 +35,16 @@ test('i18n exposes capabilities tab label', () => {
     assert.equal(zh.agent.tools?.platformTools, undefined);
     assert.equal(en.agent.tools?.platformTools, undefined);
 });
+
+test('AgentDetail uses localized capability copy and normalized versioned API paths', () => {
+    const source = read(agentDetailPath);
+
+    assert.doesNotMatch(source, /Skill-declared Packs/);
+    assert.doesNotMatch(source, /No skill-declared packs yet\./);
+    assert.doesNotMatch(source, /Activated Packs/);
+    assert.doesNotMatch(source, /Used Tools/);
+    assert.doesNotMatch(source, /Blocked Capabilities/);
+    assert.doesNotMatch(source, /Compactions/);
+    assert.doesNotMatch(source, /\/api\/agents\/\$\{id\}\/sessions/);
+    assert.match(source, /\/api\/v1\/agents\/\$\{id\}\/sessions/);
+});

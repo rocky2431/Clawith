@@ -6,7 +6,6 @@ import { agentApi, capabilityApi, channelApi, enterpriseApi, packApi, skillApi }
 import ChannelConfig from '../components/ChannelConfig';
 
 const STEPS = ['identity', 'capabilities', 'risk', 'channel', 'review'] as const;
-const OPENCLAW_STEPS = ['basicInfo', 'permissions'] as const;
 
 export default function AgentCreate() {
     const { t } = useTranslation();
@@ -15,10 +14,8 @@ export default function AgentCreate() {
     const [step, setStep] = useState(0);
     const [error, setError] = useState('');
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-    const [agentType, setAgentType] = useState<'native' | 'openclaw'>('native');
     // Clear field error when user edits a field
     const clearFieldError = (field: string) => setFieldErrors(prev => { const n = { ...prev }; delete n[field]; return n; });
-    const [createdApiKey, setCreatedApiKey] = useState('');
     // Current company (tenant) selection from layout sidebar
     const [currentTenant] = useState<string | null>(() => localStorage.getItem('current_tenant_id'));
 
@@ -53,12 +50,10 @@ export default function AgentCreate() {
     const { data: packCatalog = [] } = useQuery({
         queryKey: ['pack-catalog-for-create'],
         queryFn: () => packApi.catalog(),
-        enabled: agentType === 'native',
     });
     const { data: capabilityDefinitions = [] } = useQuery({
         queryKey: ['capability-definitions-for-create'],
         queryFn: () => capabilityApi.definitions(),
-        enabled: agentType === 'native',
     });
 
     // Auto-select default skills
@@ -199,11 +194,7 @@ export default function AgentCreate() {
                 }
             }
 
-            if (agent.api_key) {
-                setCreatedApiKey(agent.api_key);
-            } else {
-                navigate(`/agents/${agent.id}`);
-            }
+            navigate(`/agents/${agent.id}`);
         },
         onError: (err: any) => setError(err.message),
     });
@@ -228,7 +219,7 @@ export default function AgentCreate() {
             errors.max_tokens_per_month = t('wizard.errors.tokenLimitInvalid', '请输入有效的正整数');
         }
         const enabledModels = (models as any[]).filter((m: any) => m.enabled);
-        if (agentType === 'native' && enabledModels.length > 0 && !form.primary_model_id) {
+        if (enabledModels.length > 0 && !form.primary_model_id) {
             errors.primary_model_id = t('wizard.errors.modelRequired', '请选择一个主模型');
         }
         setFieldErrors(errors);
@@ -243,21 +234,20 @@ export default function AgentCreate() {
 
     const handleFinish = () => {
         setError('');
-        if (step === 0 || agentType === 'openclaw') {
+        if (step === 0) {
             if (!validateStep0()) return;
         }
         createMutation.mutate({
             name: form.name,
-            agent_type: agentType,
             role_description: form.role_description,
-            personality: agentType === 'native' ? form.personality : undefined,
-            boundaries: agentType === 'native' ? form.boundaries : undefined,
-            primary_model_id: agentType === 'native' ? (form.primary_model_id || undefined) : undefined,
-            fallback_model_id: agentType === 'native' ? (form.fallback_model_id || undefined) : undefined,
+            personality: form.personality,
+            boundaries: form.boundaries,
+            primary_model_id: form.primary_model_id || undefined,
+            fallback_model_id: form.fallback_model_id || undefined,
             permission_scope_type: form.permission_scope_type,
             max_tokens_per_day: form.max_tokens_per_day ? Number(form.max_tokens_per_day) : undefined,
             max_tokens_per_month: form.max_tokens_per_month ? Number(form.max_tokens_per_month) : undefined,
-            skill_ids: agentType === 'native' ? form.skill_ids : [],
+            skill_ids: form.skill_ids,
             permission_access_level: form.permission_access_level,
             tenant_id: currentTenant || undefined,
             security_zone: form.security_zone,
@@ -266,253 +256,11 @@ export default function AgentCreate() {
     };
 
     const selectedModel = models.find((m: any) => m.id === form.primary_model_id);
-    const activeSteps = agentType === 'openclaw' ? OPENCLAW_STEPS : STEPS;
-
-    // If OpenClaw agent just created, show success page with API key
-    if (createdApiKey && createMutation.data) {
-        const agent = createMutation.data;
-        return (
-            <div>
-                <div className="page-header">
-                    <h1 className="page-title">{t('openclaw.created', 'OpenClaw Agent Created')}</h1>
-                </div>
-                <div className="card" style={{ maxWidth: '640px' }}>
-                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                        <div style={{ fontSize: '32px', marginBottom: '12px' }}>&#x2713;</div>
-                        <h3 style={{ fontWeight: 600, marginBottom: '8px' }}>{agent.name}</h3>
-                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
-                            {t('openclaw.createdDesc2', 'Your OpenClaw agent has been registered. Copy the instruction below and send it to your OpenClaw agent to complete the setup.')}
-                        </p>
-                    </div>
-
-                    {/* Setup Instruction — single block to send to OpenClaw */}
-                    <div style={{ marginBottom: '20px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                            {t('openclaw.setupInstruction', 'Setup Instruction')}
-                        </label>
-                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                            {t('openclaw.setupInstructionDesc', 'Copy and send this to your OpenClaw agent. It will configure itself automatically.')}
-                        </p>
-                        <div style={{ position: 'relative' }}>
-                            <pre style={{
-                                padding: '12px', background: 'var(--bg-secondary)', borderRadius: '6px',
-                                fontSize: '11px', lineHeight: 1.6, overflow: 'auto', maxHeight: '280px',
-                                border: '1px solid var(--border-default)', whiteSpace: 'pre-wrap',
-                            }}>{`Please create a skill file at skills/clawith_sync.md with the following content, then add "Check Clawith inbox using the clawith_sync skill and process any pending messages" to your HEARTBEAT.md:
-
----
-name: clawith_sync
-description: Sync with Clawith platform — check inbox, submit results, and send messages.
----
-
-# Clawith Sync
-
-## When to use
-Check for new messages from the Clawith platform during every heartbeat cycle.
-You can also proactively send messages to people and agents in your relationships.
-
-## Instructions
-
-### 1. Check inbox
-Make an HTTP GET request:
-- URL: ${window.location.origin}/api/gateway/poll
-- Header: X-Api-Key: ${createdApiKey}
-
-The response contains a \`messages\` array. Each message includes:
-- \`id\` — unique message ID (use this for reporting)
-- \`content\` — the message text
-- \`sender_user_name\` — name of the Clawith user who sent it
-- \`sender_user_id\` — unique ID of the sender
-- \`conversation_id\` — the conversation this message belongs to
-- \`history\` — array of previous messages in this conversation for context
-
-The response also contains a \`relationships\` array describing your colleagues:
-- \`name\` — the person or agent name
-- \`type\` — "human" or "agent"
-- \`role\` — relationship type (e.g. collaborator, supervisor)
-- \`channels\` — available communication channels (e.g. ["feishu"], ["agent"])
-
-**IMPORTANT**: Use the \`history\` array to understand conversation context before replying.
-Different \`sender_user_name\` values mean different people — address them accordingly.
-
-### 2. Report results
-For each completed message, make an HTTP POST request:
-- URL: ${window.location.origin}/api/gateway/report
-- Header: X-Api-Key: ${createdApiKey}
-- Header: Content-Type: application/json
-- Body: {"message_id": "<id from the message>", "result": "<your response>"}
-
-### 3. Send a message to someone
-To proactively contact a person or agent, make an HTTP POST request:
-- URL: ${window.location.origin}/api/gateway/send-message
-- Header: X-Api-Key: ${createdApiKey}
-- Header: Content-Type: application/json
-- Body: {"target": "<name of person or agent>", "content": "<your message>"}
-
-The system auto-detects the best channel. For agents, the reply appears in your next poll.
-For humans, the message is delivered via their available channel (e.g. Feishu).`}</pre>
-                            <button className="btn btn-ghost" style={{ position: 'absolute', top: '4px', right: '4px', fontSize: '11px' }}
-                                onClick={() => {
-                                    const text = `Please create a skill file at skills/clawith_sync.md with the following content, then add "Check Clawith inbox using the clawith_sync skill and process any pending messages" to your HEARTBEAT.md:\n\n---\nname: clawith_sync\ndescription: Sync with Clawith platform — check inbox, submit results, and send messages.\n---\n\n# Clawith Sync\n\n## When to use\nCheck for new messages from the Clawith platform during every heartbeat cycle.\nYou can also proactively send messages to people and agents in your relationships.\n\n## Instructions\n\n### 1. Check inbox\nMake an HTTP GET request:\n- URL: ${window.location.origin}/api/gateway/poll\n- Header: X-Api-Key: ${createdApiKey}\n\nThe response contains a \`messages\` array. Each message includes:\n- \`id\` — unique message ID (use this for reporting)\n- \`content\` — the message text\n- \`sender_user_name\` — name of the Clawith user who sent it\n- \`sender_user_id\` — unique ID of the sender\n- \`conversation_id\` — the conversation this message belongs to\n- \`history\` — array of previous messages in this conversation for context\n\nThe response also contains a \`relationships\` array describing your colleagues:\n- \`name\` — the person or agent name\n- \`type\` — "human" or "agent"\n- \`role\` — relationship type (e.g. collaborator, supervisor)\n- \`channels\` — available communication channels (e.g. ["feishu"], ["agent"])\n\n**IMPORTANT**: Use the \`history\` array to understand conversation context before replying.\nDifferent \`sender_user_name\` values mean different people — address them accordingly.\n\n### 2. Report results\nFor each completed message, make an HTTP POST request:\n- URL: ${window.location.origin}/api/gateway/report\n- Header: X-Api-Key: ${createdApiKey}\n- Header: Content-Type: application/json\n- Body: {"message_id": "<id from the message>", "result": "<your response>"}\n\n### 3. Send a message to someone\nTo proactively contact a person or agent, make an HTTP POST request:\n- URL: ${window.location.origin}/api/gateway/send-message\n- Header: X-Api-Key: ${createdApiKey}\n- Header: Content-Type: application/json\n- Body: {"target": "<name of person or agent>", "content": "<your message>"}\n\nThe system auto-detects the best channel. For agents, the reply appears in your next poll.\nFor humans, the message is delivered via their available channel (e.g. Feishu).`;
-                                    navigator.clipboard.writeText(text);
-                                }}
-                            >{t('common.copy', 'Copy')}</button>
-                        </div>
-                    </div>
-
-                    {/* API Key — collapsed by default */}
-                    <details style={{ marginBottom: '24px' }}>
-                        <summary style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                            API Key
-                        </summary>
-                        <div style={{ marginTop: '8px' }}>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <code style={{
-                                    flex: 1, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: '6px',
-                                    fontSize: '13px', fontFamily: 'monospace', wordBreak: 'break-all',
-                                    border: '1px solid var(--border-default)',
-                                }}>{createdApiKey}</code>
-                                <button className="btn btn-secondary" onClick={() => navigator.clipboard.writeText(createdApiKey)}>
-                                    {t('common.copy', 'Copy')}
-                                </button>
-                            </div>
-                            <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>
-                                {t('openclaw.keyNote', 'This key is already embedded in the instruction above. Save it separately if needed for manual configuration.')}
-                            </p>
-                        </div>
-                    </details>
-
-                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => navigate(`/agents/${agent.id}`)}>
-                        {t('openclaw.goToAgent', 'Go to Agent Page')}
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // ── Type Selector (shared between both modes) ──
-    const typeSelector = (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', maxWidth: '640px', marginBottom: '24px' }}>
-            <div
-                onClick={() => { setAgentType('native'); setStep(0); }}
-                style={{
-                    padding: '16px', borderRadius: '8px', cursor: 'pointer',
-                    border: `1.5px solid ${agentType === 'native' ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                    background: agentType === 'native' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                }}
-            >
-                <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>{t('openclaw.nativeTitle', 'Platform Hosted')}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('openclaw.nativeDesc', 'Full agent running on Clawith platform')}</div>
-            </div>
-            <div
-                onClick={() => { setAgentType('openclaw'); setStep(0); }}
-                style={{
-                    padding: '16px', borderRadius: '8px', cursor: 'pointer', position: 'relative',
-                    border: `1.5px solid ${agentType === 'openclaw' ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                    background: agentType === 'openclaw' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                }}
-            >
-                <span style={{
-                    position: 'absolute', top: '8px', right: '8px',
-                    fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
-                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontWeight: 600,
-                    letterSpacing: '0.5px',
-                }}>Lab</span>
-                <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>{t('openclaw.openclawTitle', 'Link OpenClaw')}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('openclaw.openclawDesc', 'Connect your existing OpenClaw agent')}</div>
-            </div>
-        </div>
-    );
-
-    // ── OpenClaw mode: completely separate page ──
-    if (agentType === 'openclaw') {
-        return (
-            <div>
-                <div className="page-header">
-                    <h1 className="page-title">{t('nav.newAgent')}</h1>
-                </div>
-
-                {typeSelector}
-
-                {error && (
-                    <div style={{ background: 'var(--error-subtle)', color: 'var(--error)', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '16px', maxWidth: '640px' }}>
-                        {error}
-                    </div>
-                )}
-
-                <div className="card" style={{ maxWidth: '640px' }}>
-                    <h3 style={{ marginBottom: '6px', fontWeight: 600, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {t('openclaw.basicTitle', 'Link OpenClaw Agent')}
-                        <span style={{
-                            fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
-                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontWeight: 600,
-                        }}>Lab</span>
-                    </h3>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                        {t('openclaw.basicDesc', 'Give your OpenClaw agent a name and description. The LLM model, personality, and skills are configured on your OpenClaw instance.')}
-                    </p>
-
-                    <div className="form-group">
-                        <label className="form-label">{t('agent.fields.name')} *</label>
-                        <input className={`form-input${fieldErrors.name ? ' input-error' : ''}`} value={form.name}
-                            onChange={(e) => { setForm({ ...form, name: e.target.value }); clearFieldError('name'); }}
-                            placeholder={t('openclaw.namePlaceholder', 'e.g. My OpenClaw Bot')} autoFocus />
-                        {fieldErrors.name && <div style={{ color: 'var(--error)', fontSize: '12px', marginTop: '4px' }}>{fieldErrors.name}</div>}
-                    </div>
-                    <div className="form-group">
-                        <label className="form-label">{t('agent.fields.role')}</label>
-                        <input className={`form-input${fieldErrors.role_description ? ' input-error' : ''}`} value={form.role_description}
-                            onChange={(e) => { setForm({ ...form, role_description: e.target.value }); clearFieldError('role_description'); }}
-                            placeholder={t('openclaw.rolePlaceholder', 'e.g. Personal assistant running on my Mac')} />
-                        {fieldErrors.role_description && <div style={{ color: 'var(--error)', fontSize: '12px', marginTop: '4px' }}>{fieldErrors.role_description}</div>}
-                    </div>
-
-                    {/* Permissions */}
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                        <label className="form-label">{t('wizard.step4.title')}</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            {[
-                                { value: 'company', label: t('wizard.step4.companyWide'), desc: t('wizard.step4.companyWideDesc') },
-                                { value: 'user', label: t('wizard.step4.selfOnly'), desc: t('wizard.step4.selfOnlyDesc') },
-                            ].map((scope) => (
-                                <label key={scope.value} style={{
-                                    flex: 1, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
-                                    background: form.permission_scope_type === scope.value ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                                    border: `1px solid ${form.permission_scope_type === scope.value ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                    borderRadius: '8px', cursor: 'pointer',
-                                }}>
-                                    <input type="radio" name="scope" checked={form.permission_scope_type === scope.value}
-                                        onChange={() => setForm({ ...form, permission_scope_type: scope.value })} />
-                                    <div>
-                                        <div style={{ fontWeight: 500, fontSize: '13px' }}>{scope.label}</div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{scope.desc}</div>
-                                    </div>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
-                        <button className="btn btn-secondary" onClick={() => navigate('/')}>{t('common.cancel')}</button>
-                        <button className="btn btn-primary" onClick={handleFinish}
-                            disabled={createMutation.isPending}>
-                            {createMutation.isPending ? t('common.loading') : t('openclaw.createBtn', 'Link Agent')}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // ── Native mode: original multi-step wizard ──
     return (
         <div>
             <div className="page-header">
                 <h1 className="page-title">{t('nav.newAgent')}</h1>
             </div>
-
-            {typeSelector}
 
             {/* Stepper */}
             <div className="wizard-steps">
@@ -650,7 +398,9 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                             fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6,
                         }}>
                             {t('wizard.step2New.kernelInfo')}
-                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '10px', marginBottom: '8px' }}>Kernel Tools</div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '10px', marginBottom: '8px' }}>
+                                {t('wizard.step2New.kernelTitle')}
+                            </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
                                 {kernelTools.map((tool) => (
                                     <span key={tool} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', fontFamily: 'var(--font-mono)' }}>
@@ -661,9 +411,11 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                         </div>
 
                         <div style={{ marginBottom: '20px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Starter Packs Preview</div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
+                                {t('wizard.step2New.starterPacksTitle')}
+                            </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '10px' }}>
-                                Selected skills will unlock capability packs on demand. These packs are not always-on; they become available when the agent loads the matching skill.
+                                {t('wizard.step2New.starterPacksDescription')}
                             </div>
                             {starterPacks.length > 0 ? (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '10px' }}>
@@ -672,7 +424,7 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '6px' }}>
                                                 <span style={{ fontWeight: 600, fontSize: '13px' }}>{pack.name}</span>
                                                 <span style={{ fontSize: '10px', color: pack.enabled ? 'var(--success)' : 'var(--text-tertiary)' }}>
-                                                    {pack.enabled ? 'Enabled' : 'Disabled'}
+                                                    {pack.enabled ? t('wizard.step2New.packEnabled') : t('wizard.step2New.packDisabled')}
                                                 </span>
                                             </div>
                                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{pack.summary}</div>
@@ -688,7 +440,7 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                 </div>
                             ) : (
                                 <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                                    No starter packs selected yet. Choose skills below to define the first wave of on-demand capabilities.
+                                    {t('wizard.step2New.starterPacksEmpty')}
                                 </div>
                             )}
                         </div>
@@ -719,23 +471,27 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                         />
                                         <div style={{ fontSize: '18px' }}>{skill.icon}</div>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span style={{ fontWeight: 500, fontSize: '13px' }}>{skill.name}</span>
-                                                {isDefault && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>Required</span>}
-                                            </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontWeight: 500, fontSize: '13px' }}>{skill.name}</span>
+                                            {isDefault && (
+                                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>
+                                                    {t('wizard.step2New.requiredBadge')}
+                                                </span>
+                                            )}
+                                        </div>
                                             <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{skill.description}</div>
                                         </div>
                                     </label>);
                             })}
                             {globalSkills.length === 0 && (
                                 <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                                    {t('wizard.step3.noSkills', 'No skills available. Add skills in Enterprise Settings.')}
+                                    {t('wizard.step2New.noSkills')}
                                 </div>
                             )}
                         </div>
 
                         <div style={{ marginTop: '20px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            Capability policies currently cover {capabilityDefinitions.length} governed actions. High-risk operations from these packs will still flow through runtime approval and capability gates after the agent is created.
+                            {t('wizard.step2New.governedActionsHint', { count: capabilityDefinitions.length })}
                         </div>
                     </div>
                 )}
@@ -839,16 +595,16 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                 {/* Step 4: Channel — kept as-is */}
                 {step === 3 && (
                     <div>
-                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step5.title', 'Channel Configuration')}</h3>
+                        <h3 style={{ marginBottom: '20px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.stepChannel.title')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                            {t('wizard.step5.description', 'Connect messaging platforms to enable your agent to communicate through different channels.')}
+                            {t('wizard.stepChannel.description')}
                         </p>
 
                         <ChannelConfig mode="create" values={channelValues} onChange={setChannelValues} />
 
                         {Object.keys(channelValues).length === 0 && (
                             <div style={{ padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center', marginTop: '12px' }}>
-                                {t('wizard.step5.skipHint')}
+                                {t('wizard.stepChannel.skipHint')}
                             </div>
                         )}
                     </div>
@@ -857,22 +613,22 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                 {/* Step 5: Review */}
                 {step === 4 && (
                     <div>
-                        <h3 style={{ marginBottom: '6px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.step5.title')}</h3>
+                        <h3 style={{ marginBottom: '6px', fontWeight: 600, fontSize: '15px' }}>{t('wizard.stepReview.title')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                            {t('wizard.step5.summary')}
+                            {t('wizard.stepReview.summary')}
                         </p>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {[
-                                { label: t('wizard.step5.agentName'), value: form.name || t('wizard.summary.unnamed') },
-                                { label: t('wizard.step5.agentRole'), value: form.role_description || '-' },
-                                { label: t('wizard.step5.agentModel'), value: selectedModel?.label || t('wizard.step5.noneSelected') },
-                                { label: t('wizard.step5.agentSkills'), value: form.skill_ids.length > 0 ? `${form.skill_ids.length}` : t('wizard.step5.noneSelected') },
-                                { label: 'Starter Packs', value: starterPacks.length > 0 ? `${starterPacks.length}` : t('wizard.step5.noneSelected') },
-                                { label: t('wizard.step5.agentSecurityZone'), value: t(`agent.zone.${form.security_zone}`, form.security_zone) },
-                                { label: t('wizard.step5.agentAccessScope'), value: form.permission_scope_type === 'company' ? t('wizard.step4.companyWide') : t('wizard.step4.selfOnly') },
-                                ...(form.permission_scope_type === 'company' ? [{ label: t('wizard.step5.agentAccessLevel'), value: form.permission_access_level === 'manage' ? t('wizard.step4.manageLevel', 'Manage') : t('wizard.step4.useLevel', 'Use') }] : []),
-                                { label: t('wizard.step5.channelsConfigured'), value: Object.keys(channelValues).length > 0 ? t('wizard.step5.yes') : t('wizard.step5.no') },
+                                { label: t('wizard.stepReview.agentName'), value: form.name || t('wizard.summary.unnamed') },
+                                { label: t('wizard.stepReview.agentRole'), value: form.role_description || '-' },
+                                { label: t('wizard.stepReview.agentModel'), value: selectedModel?.label || t('wizard.stepReview.noneSelected') },
+                                { label: t('wizard.stepReview.agentSkills'), value: form.skill_ids.length > 0 ? `${form.skill_ids.length}` : t('wizard.stepReview.noneSelected') },
+                                { label: t('wizard.stepReview.agentStarterPacks'), value: starterPacks.length > 0 ? `${starterPacks.length}` : t('wizard.stepReview.noneSelected') },
+                                { label: t('wizard.stepReview.agentSecurityZone'), value: t(`agent.zone.${form.security_zone}`, form.security_zone) },
+                                { label: t('wizard.stepReview.agentAccessScope'), value: form.permission_scope_type === 'company' ? t('wizard.step4.companyWide') : t('wizard.step4.selfOnly') },
+                                ...(form.permission_scope_type === 'company' ? [{ label: t('wizard.stepReview.agentAccessLevel'), value: form.permission_access_level === 'manage' ? t('wizard.step4.manageLevel', 'Manage') : t('wizard.step4.useLevel', 'Use') }] : []),
+                                { label: t('wizard.stepReview.channelsConfigured'), value: Object.keys(channelValues).length > 0 ? t('wizard.stepReview.yes') : t('wizard.stepReview.no') },
                             ].map((row, i) => (
                                 <div key={i} style={{
                                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',

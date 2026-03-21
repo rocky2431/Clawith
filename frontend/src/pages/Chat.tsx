@@ -101,7 +101,7 @@ export default function Chat() {
 
     const resolveHistoryImageUrl = (fileName: string) => {
         if (!id || !token) return undefined;
-        return `/api/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(fileName)}&token=${token}`;
+        return `/api/v1/agents/${id}/files/download?path=workspace/uploads/${encodeURIComponent(fileName)}&token=${token}`;
     };
 
     // Load chat history on mount
